@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import json
+import tempfile
+from pathlib import Path
 from typing import Any
 
 import gradio as gr
 
 from extract import extract_session
+from shell import generate_shell_svg
 from transcribe import transcribe_audio
+
+ProcessAudioResult = tuple[str, str, str, str, str | None, str | None, str | None]
 
 
 def _format_slug_recap(extraction: dict[str, Any]) -> str:
@@ -29,17 +34,38 @@ def _format_slug_recap(extraction: dict[str, Any]) -> str:
     )
 
 
-def process_audio(audio: str | None) -> tuple[str, str, str]:
+def _write_download_file(filename: str, content: str) -> str:
+    """Write generated content to a temporary file for Gradio download output."""
+    download_dir = Path(tempfile.mkdtemp(prefix="turboskillslug-"))
+    path = download_dir / filename
+    path.write_text(content, encoding="utf-8")
+    return str(path)
+
+
+def process_audio(audio: str | None) -> ProcessAudioResult:
     """Transcribe an uploaded or recorded audio file and extract a session recap."""
     if audio is None:
         message = "Give the slug an audio file first."
-        return message, "", ""
+        return message, "", "", "", None, None, None
 
     transcript = transcribe_audio(audio)
     extraction = extract_session(transcript)
+    slug_recap = _format_slug_recap(extraction)
+    shell_svg = generate_shell_svg(extraction)
     raw_json = json.dumps(extraction, indent=2)
+    shell_file = _write_download_file("turboskillslug-shell.svg", shell_svg)
+    skill_file = _write_download_file("SKILL.md", str(extraction.get("skill_md", "")))
+    recap_file = _write_download_file("slug-recap.txt", slug_recap)
 
-    return f"## Transcript\n\n{transcript}", _format_slug_recap(extraction), raw_json
+    return (
+        f"## Transcript\n\n{transcript}",
+        slug_recap,
+        shell_svg,
+        raw_json,
+        shell_file,
+        skill_file,
+        recap_file,
+    )
 
 
 def build_interface() -> gr.Blocks:
@@ -57,12 +83,24 @@ def build_interface() -> gr.Blocks:
         submit_button = gr.Button("give it to the slug")
         transcript_output = gr.Markdown()
         recap_output = gr.Markdown()
+        shell_output = gr.HTML(label="Shell")
         raw_json_output = gr.Code(label="Raw JSON", language="json")
+        shell_download = gr.File(label="Download shell SVG")
+        skill_download = gr.File(label="Download SKILL.md")
+        recap_download = gr.File(label="Download slug recap")
 
         submit_button.click(
             fn=process_audio,
             inputs=audio_input,
-            outputs=[transcript_output, recap_output, raw_json_output],
+            outputs=[
+                transcript_output,
+                recap_output,
+                shell_output,
+                raw_json_output,
+                shell_download,
+                skill_download,
+                recap_download,
+            ],
         )
 
     return demo
