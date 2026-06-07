@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import gradio as gr
 
-
-PLACEHOLDER_RESPONSE = "The slug is warming up. Audio analysis will arrive soon."
+from transcribe import transcribe_audio
 
 
 def process_audio(audio: str | None) -> str:
-    """Return a placeholder response for an uploaded or recorded audio file."""
+    """Transcribe an uploaded or recorded audio file."""
     if audio is None:
         return "Give the slug an audio file first."
 
-    return PLACEHOLDER_RESPONSE
+    transcript = transcribe_audio(audio)
+    return f"## Transcript\n\n{transcript}"
 
 
 def build_interface() -> gr.Blocks:
@@ -29,7 +29,7 @@ def build_interface() -> gr.Blocks:
             label="Audio",
         )
         submit_button = gr.Button("give it to the slug")
-        output = gr.Textbox(label="Slug response")
+        output = gr.Markdown()
 
         submit_button.click(
             fn=process_audio,
