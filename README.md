@@ -12,6 +12,10 @@ short_description: A small slow companion who watches you build.
 tags:
   - hackathon
   - build-small-hackathon
+  - thousand-token-wood
+  - codex
+  - best-demo
+  - off-brand
 ---
 
 # TurboSkillSlug
