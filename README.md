@@ -82,3 +82,13 @@ The slug's voice (50 hand written seed utterances that define the tone), the she
 > *Strange is good. Joyful is the bar.*
 
 The slug is strange. The shell is joyful. Both are small.
+
+## Demo
+
+Watch the full demo: [https://youtu.be/jvVtbkjd8cw](https://youtu.be/jvVtbkjd8cw)
+
+## Social
+
+[Twitter/X post](https://x.com/anubhav27071997/status/2063970171010826540?s=20)
+
+
