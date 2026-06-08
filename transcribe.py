@@ -29,7 +29,7 @@ def _extract_transcript(response: Any) -> str:
 def transcribe_audio(file_path: str) -> str:
     """Transcribe an audio file with Hugging Face Inference API."""
     audio = Path(file_path).read_bytes()
-    client = InferenceClient(token=os.environ.get(HF_TOKEN_ENV_VAR))
+    client = InferenceClient(provider="hf-inference", token=os.environ.get(HF_TOKEN_ENV_VAR))
     response = client.automatic_speech_recognition(
         audio,
         model=MODEL_NAME,

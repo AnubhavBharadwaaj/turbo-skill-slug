@@ -73,7 +73,7 @@ def _parse_json_object(content: str) -> dict[str, Any]:
 
 def extract_session(transcript: str) -> dict[str, Any]:
     """Extract a structured TurboSkillSlug session recap from a transcript."""
-    client = InferenceClient(token=os.environ.get(HF_TOKEN_ENV_VAR))
+    client = InferenceClient(provider="hf-inference", token=os.environ.get(HF_TOKEN_ENV_VAR))
     response = client.chat.completions.create(
         model=MODEL_NAME,
         messages=[
