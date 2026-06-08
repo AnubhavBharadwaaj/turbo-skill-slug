@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import os
 from typing import Any
 
@@ -28,8 +29,13 @@ def _extract_transcript(response: Any) -> str:
 def transcribe_audio(file_path: str) -> str:
     """Transcribe an audio file with Hugging Face Inference API."""
     client = InferenceClient(provider="hf-inference", token=os.environ.get(HF_TOKEN_ENV_VAR))
+    with open(file_path, "rb") as audio_file:
+        audio_data = audio_file.read()
+    buf = io.BytesIO(audio_data)
+    buf.content_type = "audio/wav"
+
     response = client.automatic_speech_recognition(
-        file_path,
+        buf,
         model=MODEL_NAME,
     )
 
