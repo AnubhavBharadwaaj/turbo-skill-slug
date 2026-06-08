@@ -1,39 +1,25 @@
-"""Audio transcription utilities for TurboSkillSlug."""
+"""Audio transcription via direct API call to HF Inference."""
 
-from __future__ import annotations
-
+import mimetypes
 import os
-from typing import Any
 
-from huggingface_hub import InferenceClient
-
-
-MODEL_NAME = "openai/whisper-large-v3-turbo"
-HF_TOKEN_ENV_VAR = "HF_TOKEN"
+import httpx
 
 
-def _extract_transcript(response: Any) -> str:
-    """Extract transcript text from a Hugging Face ASR response."""
-    if isinstance(response, str):
-        return response
-
-    if isinstance(response, dict):
-        text = response.get("text")
-        return str(text) if text is not None else ""
-
-    text = getattr(response, "text", None)
-    return str(text) if text is not None else str(response)
+HF_TOKEN = os.environ.get("HF_TOKEN")
+API_URL = "https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo"
 
 
 def transcribe_audio(file_path: str) -> str:
-    """Transcribe an audio file with Hugging Face Inference API."""
-    client = InferenceClient(provider="hf-inference", token=os.environ.get(HF_TOKEN_ENV_VAR))
-    with open(file_path, "rb") as audio_file:
-        audio_data = audio_file.read()
-
-    response = client.automatic_speech_recognition(
-        audio_data,
-        model=MODEL_NAME,
-    )
-
-    return _extract_transcript(response)
+    """Transcribe audio file using Whisper via HF Inference API."""
+    content_type = mimetypes.guess_type(file_path)[0] or "audio/wav"
+    headers = {
+        "Authorization": f"Bearer {HF_TOKEN}",
+        "Content-Type": content_type,
+    }
+    with open(file_path, "rb") as f:
+        data = f.read()
+    response = httpx.post(API_URL, headers=headers, content=data, timeout=120.0)
+    response.raise_for_status()
+    result = response.json()
+    return result.get("text", str(result))
