@@ -9,7 +9,7 @@ from typing import Any
 from huggingface_hub import InferenceClient
 
 
-MODEL_NAME = "openai/whisper-small"
+MODEL_NAME = "openai/whisper-large-v3-turbo"
 HF_TOKEN_ENV_VAR = "HF_TOKEN"
 
 
