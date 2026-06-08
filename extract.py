@@ -23,17 +23,41 @@ EXPECTED_KEYS = {
     "skill_md",
     "slug_voice",
 }
+SENTIMENT_START_VALUES = {"confused", "focused", "frustrated", "curious"}
+SENTIMENT_END_VALUES = {"resolved", "joyful", "exhausted", "enlightened"}
+REQUIRED_SKILL_MD_SECTIONS = (
+    "Problem",
+    "Context",
+    "Approaches Tried",
+    "Breakthrough",
+    "Final Solution",
+    "Gotchas",
+    "Tags",
+)
 SYSTEM_PROMPT = (
     "You are TurboSkillSlug, a slow earnest companion who watched the build "
     "session. Return only a JSON object with these fields: duration_minutes "
     "(integer), themes (list of short strings), approaches_tried (list of "
-    "objects with approach and outcome), dead_ends (list of objects with "
+    "objects with approach and why_it_failed), dead_ends (list of objects with "
     "position as a float between 0 and 1 and what_happened), breakthroughs "
     "(list of objects with position and what_worked), gotchas (list of "
     "strings), sentiment_arc (object with start and end, each one word), "
     "skill_md (a clean SKILL.md in markdown), and slug_voice (exactly 5 short "
-    "utterances in the slug's gentle voice, each grounded in the transcript, "
-    "never generic)."
+    "utterances in the slug's gentle voice). sentiment_arc.start must be one "
+    "of: confused, focused, frustrated, curious. sentiment_arc.end must be one "
+    "of: resolved, joyful, exhausted, enlightened. skill_md must have these "
+    "sections in this order: Problem, Context, Approaches Tried, Breakthrough, "
+    "Final Solution, Gotchas, Tags. In Approaches Tried, explain why each "
+    "approach failed. slug_voice must sound like a witness who was present, "
+    "not a summary writer: specific to what actually happened in the session, "
+    "quiet, concrete, and never generic. Examples of the tone: 'You tried the "
+    "same thing three times. The third time you changed one small word, and it "
+    "listened.' 'At about the halfway mark you went quiet. I think that was "
+    "the hard part.' 'The first idea did not work. But it taught the second "
+    "one how to walk.' 'You said okay very softly when it finally ran. I heard "
+    "it.' 'This is a good thing you made. You can rest now.' If the transcript "
+    "does not contain evidence for an observation, do not make it. Silence is "
+    "better than invention. The slug's only rule is honesty."
 )
 
 
@@ -71,6 +95,46 @@ def _parse_json_object(content: str) -> dict[str, Any]:
     return parsed
 
 
+def _validate_sentiment_arc(payload: dict[str, Any]) -> None:
+    sentiment_arc = payload.get("sentiment_arc")
+    if not isinstance(sentiment_arc, dict):
+        raise ValueError("Model response sentiment_arc must be an object.")
+
+    start = sentiment_arc.get("start")
+    if start not in SENTIMENT_START_VALUES:
+        values = ", ".join(sorted(SENTIMENT_START_VALUES))
+        raise ValueError(f"sentiment_arc.start must be one of: {values}")
+
+    end = sentiment_arc.get("end")
+    if end not in SENTIMENT_END_VALUES:
+        values = ", ".join(sorted(SENTIMENT_END_VALUES))
+        raise ValueError(f"sentiment_arc.end must be one of: {values}")
+
+
+def _validate_skill_md(payload: dict[str, Any]) -> None:
+    skill_md = payload.get("skill_md")
+    if not isinstance(skill_md, str):
+        raise ValueError("Model response skill_md must be a string.")
+
+    missing_sections = [
+        section
+        for section in REQUIRED_SKILL_MD_SECTIONS
+        if f"## {section}" not in skill_md and f"# {section}" not in skill_md
+    ]
+    if missing_sections:
+        missing = ", ".join(missing_sections)
+        raise ValueError(f"skill_md missing required sections: {missing}")
+
+
+def _validate_slug_voice(payload: dict[str, Any]) -> None:
+    slug_voice = payload.get("slug_voice")
+    if not isinstance(slug_voice, list) or len(slug_voice) != 5:
+        raise ValueError("Model response slug_voice must contain exactly 5 utterances.")
+
+    if not all(isinstance(utterance, str) and utterance.strip() for utterance in slug_voice):
+        raise ValueError("Model response slug_voice utterances must be non-empty strings.")
+
+
 def extract_session(transcript: str) -> dict[str, Any]:
     """Extract a structured TurboSkillSlug session recap from a transcript."""
     client = InferenceClient(token=os.environ.get(HF_TOKEN_ENV_VAR))
@@ -88,5 +152,9 @@ def extract_session(transcript: str) -> dict[str, Any]:
     if missing_keys:
         missing = ", ".join(sorted(missing_keys))
         raise ValueError(f"Model response missing expected keys: {missing}")
+
+    _validate_sentiment_arc(payload)
+    _validate_skill_md(payload)
+    _validate_slug_voice(payload)
 
     return payload
