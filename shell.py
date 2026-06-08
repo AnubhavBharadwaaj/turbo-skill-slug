@@ -181,11 +181,11 @@ def generate_shell_svg(features: dict[str, Any]) -> str:
 
     # ---- DEFS: filters, gradients, patterns ----
     svg.append(f'''<defs>
-  <!-- Nacre / mother-of-pearl texture -->
-  <filter id="nacre" x="-10%" y="-10%" width="120%" height="120%">
-    <feTurbulence type="fractalNoise" baseFrequency="0.025 0.05"
-                  numOctaves="5" seed="{seed}" result="noise"/>
-    <feColorMatrix in="noise" type="saturate" values="0.4" result="colored"/>
+  <!-- Nacre / mother-of-pearl: barely-there shimmer, not noise -->
+  <filter id="nacre" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.007 0.015"
+                  numOctaves="3" seed="{seed}" result="noise"/>
+    <feColorMatrix in="noise" type="saturate" values="0.2" result="colored"/>
     <feBlend in="SourceGraphic" in2="colored" mode="soft-light" result="nacred"/>
     <feComposite in="nacred" in2="SourceGraphic" operator="in"/>
   </filter>
@@ -207,11 +207,12 @@ def generate_shell_svg(features: dict[str, Any]) -> str:
     <feGaussianBlur stdDeviation="1.5"/>
   </filter>
 
-  <!-- Shell body gradient (multi-stop) -->
+  <!-- Shell body gradient (high contrast, 5 stops) -->
   <radialGradient id="bodyGrad" cx="40%" cy="40%" r="70%">
-    <stop offset="0%"   stop-color="{pal['body_light']}" stop-opacity="0.95"/>
-    <stop offset="35%"  stop-color="{pal['accent']}" stop-opacity="0.7"/>
-    <stop offset="65%"  stop-color="{pal['body_dark']}" stop-opacity="0.85"/>
+    <stop offset="0%"   stop-color="{pal['highlight']}" stop-opacity="0.85"/>
+    <stop offset="20%"  stop-color="{pal['body_light']}" stop-opacity="0.9"/>
+    <stop offset="50%"  stop-color="{pal['accent']}" stop-opacity="0.8"/>
+    <stop offset="80%"  stop-color="{pal['body_dark']}" stop-opacity="0.9"/>
     <stop offset="100%" stop-color="{pal['bg_mid']}" stop-opacity="0.95"/>
   </radialGradient>
 
@@ -277,17 +278,20 @@ def generate_shell_svg(features: dict[str, Any]) -> str:
         f'stroke="{pal["septa"]}" stroke-width="0.5" filter="url(#nacre)"/>'
     )
 
-    # ---- SEPTA (chamber ridges) ----
+    # ---- SEPTA (chamber ridges, organic opacity variation) ----
     septa_step = 14 if "debug" in themes else (18 if "build" in themes else 16)
-    for i in range(septa_step, len(centerline) - 8, septa_step):
+    total_septa = (len(centerline) - 8 - septa_step) // septa_step
+    for si, i in enumerate(range(septa_step, len(centerline) - 8, septa_step)):
         ix, iy = inner_pts[i][0], inner_pts[i][1]
         ox, oy = outer_pts[i][0], outer_pts[i][1]
-        # Soft, semi-transparent ridges
+        # Opacity grows along the spiral (faint at center, fuller at edge)
+        frac = si / max(1, total_septa)
+        opacity = 0.15 + frac * 0.35
         svg.append(
             f'<line x1="{ix:.1f}" y1="{iy:.1f}" '
             f'x2="{ox:.1f}" y2="{oy:.1f}" '
             f'stroke="{pal["septa"]}" stroke-width="0.7" '
-            f'opacity="0.4" stroke-linecap="round"/>'
+            f'opacity="{opacity:.2f}" stroke-linecap="round"/>'
         )
 
     # ---- LONGITUDINAL BANDS (iridescence stripes) ----
@@ -309,6 +313,33 @@ def generate_shell_svg(features: dict[str, Any]) -> str:
     svg.append(
         f'<path d="{cl_path}" fill="none" '
         f'stroke="{pal["highlight"]}" stroke-width="0.5" opacity="0.4"/>'
+    )
+
+    # ---- OUTER RIM GLOW (LED underglow effect) ----
+    rim_path = _smooth_path(outer_pts)
+    svg.append(
+        f'<path d="{rim_path}" fill="none" '
+        f'stroke="{pal["accent"]}" stroke-width="2.5" opacity="0.15" '
+        f'filter="url(#jewelGlow)"/>'
+    )
+    svg.append(
+        f'<path d="{rim_path}" fill="none" '
+        f'stroke="{pal["highlight"]}" stroke-width="0.8" opacity="0.5"/>'
+    )
+
+    # ---- CENTRAL EYE (origin point of the shell) ----
+    ex, ey = centerline[0][0], centerline[0][1]
+    svg.append(
+        f'<circle cx="{ex:.1f}" cy="{ey:.1f}" r="4" '
+        f'fill="{pal["accent"]}" opacity="0.3" filter="url(#jewelGlow)"/>'
+    )
+    svg.append(
+        f'<circle cx="{ex:.1f}" cy="{ey:.1f}" r="1.8" '
+        f'fill="{pal["highlight"]}" opacity="0.85"/>'
+    )
+    svg.append(
+        f'<circle cx="{ex - 0.4:.1f}" cy="{ey - 0.5:.1f}" r="0.6" '
+        f'fill="#fff" opacity="0.9"/>'
     )
 
     # ---- DEAD-END KNOTS ----
@@ -343,20 +374,20 @@ def generate_shell_svg(features: dict[str, Any]) -> str:
         ox, oy, _, _, n = outer_pts[idx]
         jx = ox + math.cos(n) * 4
         jy = oy + math.sin(n) * 4
-        # Glow halo
+        # Glow halo (larger, brighter)
         svg.append(
-            f'<circle cx="{jx:.1f}" cy="{jy:.1f}" r="6" '
-            f'fill="{pal["jewel"]}" opacity="0.25" filter="url(#jewelGlow)"/>'
+            f'<circle cx="{jx:.1f}" cy="{jy:.1f}" r="9" '
+            f'fill="{pal["jewel"]}" opacity="0.3" filter="url(#jewelGlow)"/>'
         )
-        # Jewel body
+        # Jewel body (larger)
         svg.append(
-            f'<circle cx="{jx:.1f}" cy="{jy:.1f}" r="3.5" '
+            f'<circle cx="{jx:.1f}" cy="{jy:.1f}" r="4.5" '
             f'fill="url(#jewelGrad)" opacity="0.95"/>'
         )
         # Tiny highlight dot (refraction)
         svg.append(
-            f'<circle cx="{jx - 0.8:.1f}" cy="{jy - 1:.1f}" r="0.9" '
-            f'fill="#fff" opacity="0.85"/>'
+            f'<circle cx="{jx - 1:.1f}" cy="{jy - 1.2:.1f}" r="1.2" '
+            f'fill="#fff" opacity="0.9"/>'
         )
 
     # ---- APERTURE (breakthrough mouth) at the spiral tip ----
