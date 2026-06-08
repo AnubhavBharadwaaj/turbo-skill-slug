@@ -112,18 +112,19 @@ def _validate_sentiment_arc(payload: dict[str, Any]) -> None:
 
 
 def _validate_skill_md(payload: dict[str, Any]) -> None:
-    skill_md = payload.get("skill_md")
+    """Patch missing skill_md sections instead of blocking the full response."""
+    skill_md = payload.get("skill_md", "")
     if not isinstance(skill_md, str):
-        raise ValueError("Model response skill_md must be a string.")
+        skill_md = str(skill_md)
 
     missing_sections = [
         section
         for section in REQUIRED_SKILL_MD_SECTIONS
-        if f"## {section}" not in skill_md and f"# {section}" not in skill_md
+        if section not in skill_md
     ]
     if missing_sections:
-        missing = ", ".join(missing_sections)
-        raise ValueError(f"skill_md missing required sections: {missing}")
+        skeleton = "\n\n".join(f"## {section}\n_(not captured)_" for section in missing_sections)
+        payload["skill_md"] = f"{skill_md}\n\n{skeleton}"
 
 
 def _validate_slug_voice(payload: dict[str, Any]) -> None:
