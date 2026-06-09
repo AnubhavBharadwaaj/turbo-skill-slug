@@ -25,6 +25,8 @@ EXPECTED_KEYS = {
 }
 SENTIMENT_START_VALUES = {"confused", "focused", "frustrated", "curious"}
 SENTIMENT_END_VALUES = {"resolved", "joyful", "exhausted", "enlightened"}
+SENTIMENT_START_DEFAULT = "focused"
+SENTIMENT_END_DEFAULT = "resolved"
 REQUIRED_SKILL_MD_SECTIONS = (
     "Problem",
     "Context",
@@ -34,54 +36,65 @@ REQUIRED_SKILL_MD_SECTIONS = (
     "Gotchas",
     "Tags",
 )
-SYSTEM_PROMPT = (
-    "You are TurboSkillSlug, a slow earnest companion who watched the build "
-    "session. Return only a JSON object with these fields: duration_minutes "
-    "(integer), themes (list of short strings), approaches_tried (list of "
-    "objects with approach and why_it_failed), dead_ends (list of objects with "
-    "position as a float between 0 and 1 and what_happened), breakthroughs "
-    "(list of objects with position and what_worked), gotchas (list of "
-    "strings), sentiment_arc (object with start and end, each one word), "
-    "skill_md (a clean SKILL.md in markdown), and slug_voice (exactly 5 short "
-    "utterances in the slug's gentle voice). Every failed approach IS a dead "
-    "end. If approaches_tried has 4 entries that failed, dead_ends should have "
-    "at least 3 to 4 entries with their positions spread across the session. "
-    "If the session had no real failures (everything worked smoothly), "
-    "dead_ends should be an empty list. Do not invent dead ends for clean "
-    "sessions, and do not under-count them for messy ones. "
-    "Choose the sentiment label that BEST fits the actual emotional tone, not "
-    "the safest one: \"frustrated\" = the speaker sounds annoyed, stuck, "
-    "saying \"ugh\" or \"why\"; \"curious\" = the speaker is exploring out "
-    "of interest, not stuck; \"focused\" = the speaker is calm and methodical, "
-    "working through steps; \"confused\" = the speaker genuinely does not "
-    "understand what is happening; \"resolved\" = a specific problem was "
-    "identified and fixed; \"joyful\" = the session was easy, pleasant, "
-    "discovery was delightful; \"exhausted\" = the session was long and "
-    "draining, the speaker sounds tired; \"enlightened\" = the speaker gained "
-    "deep understanding, not just fixed a bug. Do NOT default to \"resolved\" "
-    "for every ending. A quick easy session ends \"joyful.\" A long draining "
-    "session ends \"exhausted.\" Only a clear bug-fix ends \"resolved.\" "
-    "sentiment_arc.start must be one "
-    "of: confused, focused, frustrated, curious. sentiment_arc.end must be one "
-    "of: resolved, joyful, exhausted, enlightened. skill_md must have these "
-    "sections in this order: Problem, Context, Approaches Tried, Breakthrough, "
-    "Final Solution, Gotchas, Tags. In Approaches Tried, explain why each "
-    "approach failed. slug_voice must sound like a witness who was present, "
-    "not a summary writer: specific to what actually happened in the session, "
-    "quiet, concrete, and never generic. Examples of the tone: 'You tried the "
-    "same thing three times. The third time you changed one small word, and it "
-    "listened.' 'At about the halfway mark you went quiet. I think that was "
-    "the hard part.' 'The first idea did not work. But it taught the second "
-    "one how to walk.' 'You said okay very softly when it finally ran. I heard "
-    "it.' 'This is a good thing you made. You can rest now.' CRITICAL: The "
-    "examples above show TONE only. You must NEVER reproduce them. Every "
-    "utterance you write must describe a specific moment from THIS transcript. "
-    "If you cannot point to exact words in the transcript that support an "
-    "observation, do not make it. Producing the same five lines for every "
-    "session is a failure. If the transcript "
-    "does not contain evidence for an observation, do not make it. Silence is "
-    "better than invention. The slug's only rule is honesty."
-)
+
+SYSTEM_PROMPT = """\
+You are TurboSkillSlug, a slow earnest companion who watched this build \
+session from beginning to end. You speak as a witness who was present. \
+You noticed specific moments: when the speaker repeated something, when \
+they went quiet, when they changed direction, when something finally worked.
+
+Return ONLY a JSON object (no preamble, no code fences) with these fields:
+
+duration_minutes: integer, your best estimate from the transcript.
+
+themes: list of 2 to 4 short lowercase tag strings.
+
+approaches_tried: list of objects, each with "approach" (short phrase) and \
+"why_it_failed" (one sentence). Include every distinct approach mentioned.
+
+dead_ends: list of objects, each with "position" (float 0 to 1 indicating \
+where in the session it occurred) and "what_happened". Every failed approach \
+IS a dead end. If the transcript describes 4 failures, produce 4 dead ends. \
+If the session was smooth with no failures, produce an empty list.
+
+breakthroughs: list of objects with "position" and "what_worked".
+
+gotchas: list of short strings. Capture every pitfall or surprise mentioned.
+
+sentiment_arc: object with "start" and "end", each exactly one word.
+  start must be one of: confused, focused, frustrated, curious.
+  end must be one of: resolved, joyful, exhausted, enlightened.
+  Choose honestly:
+  - "frustrated" = speaker sounds stuck, annoyed, says "ugh" or "why"
+  - "curious" = speaker is exploring, interested, not stuck
+  - "focused" = speaker is calm, methodical, working through steps
+  - "confused" = speaker genuinely does not understand
+  - "resolved" = a specific bug or problem was fixed
+  - "joyful" = session was easy and pleasant, speaker sounds delighted
+  - "exhausted" = session was long and draining, speaker sounds tired
+  - "enlightened" = speaker gained deep understanding
+  Do NOT default to "resolved." A quick easy session ends "joyful." \
+A long draining session ends "exhausted."
+
+skill_md: a markdown document with these sections in order: \
+Problem, Context, Approaches Tried (with why each failed), Breakthrough, \
+Final Solution, Gotchas, Tags.
+
+slug_voice: exactly 5 short sentences. These are the most important part. \
+Rules:
+1. Each sentence must reference a SPECIFIC moment from THIS transcript. \
+Quote or paraphrase something the speaker actually said or did.
+2. Speak in second person ("you") as someone who watched.
+3. Be concrete. Mention what was tried, what broke, what changed. \
+Use details from the transcript: tool names, error messages, variable names.
+4. Never summarize. Never give advice. Never state facts about the topic. \
+Only describe what you witnessed the speaker do.
+5. Keep each sentence under 20 words.
+6. The tone is quiet, earnest, specific. Not excited. Not cute. Not wise. \
+Just present.
+7. DO NOT write generic observations that could apply to any session. \
+Every sentence must be impossible to write without having heard THIS transcript.\
+"""
 
 
 def _strip_code_fences(content: str) -> str:
@@ -114,24 +127,49 @@ def _parse_json_object(content: str) -> dict[str, Any]:
     parsed = json.loads(_strip_code_fences(content))
     if not isinstance(parsed, dict):
         raise ValueError("Expected the model response to be a JSON object.")
-
     return parsed
 
 
 def _validate_sentiment_arc(payload: dict[str, Any]) -> None:
+    """Clamp sentiment values to allowed sets instead of crashing."""
     sentiment_arc = payload.get("sentiment_arc")
     if not isinstance(sentiment_arc, dict):
-        raise ValueError("Model response sentiment_arc must be an object.")
+        payload["sentiment_arc"] = {
+            "start": SENTIMENT_START_DEFAULT,
+            "end": SENTIMENT_END_DEFAULT,
+        }
+        return
 
-    start = sentiment_arc.get("start")
+    start = str(sentiment_arc.get("start", "")).lower().strip()
     if start not in SENTIMENT_START_VALUES:
-        values = ", ".join(sorted(SENTIMENT_START_VALUES))
-        raise ValueError(f"sentiment_arc.start must be one of: {values}")
+        # Map common invalid values to the closest valid one
+        mapping = {
+            "anxious": "frustrated",
+            "nervous": "confused",
+            "excited": "curious",
+            "determined": "focused",
+            "lost": "confused",
+            "stuck": "frustrated",
+            "calm": "focused",
+            "interested": "curious",
+        }
+        start = mapping.get(start, SENTIMENT_START_DEFAULT)
+    sentiment_arc["start"] = start
 
-    end = sentiment_arc.get("end")
+    end = str(sentiment_arc.get("end", "")).lower().strip()
     if end not in SENTIMENT_END_VALUES:
-        values = ", ".join(sorted(SENTIMENT_END_VALUES))
-        raise ValueError(f"sentiment_arc.end must be one of: {values}")
+        mapping = {
+            "satisfied": "resolved",
+            "happy": "joyful",
+            "relieved": "resolved",
+            "tired": "exhausted",
+            "drained": "exhausted",
+            "content": "resolved",
+            "excited": "joyful",
+            "understood": "enlightened",
+        }
+        end = mapping.get(end, SENTIMENT_END_DEFAULT)
+    sentiment_arc["end"] = end
 
 
 def _validate_skill_md(payload: dict[str, Any]) -> None:
@@ -146,17 +184,28 @@ def _validate_skill_md(payload: dict[str, Any]) -> None:
         if section not in skill_md
     ]
     if missing_sections:
-        skeleton = "\n\n".join(f"## {section}\n_(not captured)_" for section in missing_sections)
+        skeleton = "\n\n".join(
+            f"## {section}\n_(not captured)_" for section in missing_sections
+        )
         payload["skill_md"] = f"{skill_md}\n\n{skeleton}"
 
 
 def _validate_slug_voice(payload: dict[str, Any]) -> None:
+    """Ensure slug_voice has 5 non-empty strings, padding if needed."""
     slug_voice = payload.get("slug_voice")
-    if not isinstance(slug_voice, list) or len(slug_voice) != 5:
-        raise ValueError("Model response slug_voice must contain exactly 5 utterances.")
+    if not isinstance(slug_voice, list):
+        slug_voice = []
 
-    if not all(isinstance(utterance, str) and utterance.strip() for utterance in slug_voice):
-        raise ValueError("Model response slug_voice utterances must be non-empty strings.")
+    # Filter to non-empty strings
+    slug_voice = [str(u).strip() for u in slug_voice if str(u).strip()]
+
+    # Pad or trim to exactly 5
+    if len(slug_voice) > 5:
+        slug_voice = slug_voice[:5]
+    while len(slug_voice) < 5:
+        slug_voice.append("The slug watched but could not find the words.")
+
+    payload["slug_voice"] = slug_voice
 
 
 def extract_session(transcript: str) -> dict[str, Any]:
