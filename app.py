@@ -12,6 +12,7 @@ from typing import Any
 import gradio as gr
 
 from extract import extract_session
+from receipt import generate_receipt_svg
 from shell import generate_shell_svg
 from transcribe import transcribe_audio
 
@@ -50,11 +51,21 @@ def _format_slug_recap(extraction: dict[str, Any]) -> str:
 
 def process_audio(
     audio: str | None,
-) -> tuple[str, str, str, str, str | None, str | None, str | None]:
+) -> tuple[
+    str,
+    str,
+    str,
+    str,
+    str,
+    str | None,
+    str | None,
+    str | None,
+    str | None,
+]:
     """Transcribe, extract, generate shell, and return all outputs."""
     if audio is None:
         message = "Give the slug an audio file first."
-        return message, "", "", "", None, None, None
+        return message, "", "", "", "", None, None, None, None
 
     # 1. Transcribe
     transcript = transcribe_audio(audio)
@@ -71,12 +82,16 @@ def process_audio(
 
     # 4. Generate the shell SVG
     shell_svg = generate_shell_svg(extraction)
+    receipt_svg = generate_receipt_svg(extraction)
 
     # 5. Write downloadable files
     tmp_dir = Path(tempfile.mkdtemp(prefix="slug_"))
 
     svg_path = tmp_dir / "shell.svg"
     svg_path.write_text(shell_svg)
+
+    receipt_path = tmp_dir / "receipt.svg"
+    receipt_path.write_text(receipt_svg)
 
     skill_path = tmp_dir / "skill.md"
     skill_path.write_text(extraction.get("skill_md", ""))
@@ -90,8 +105,10 @@ def process_audio(
         f"## Transcript\n\n{transcript}",
         _format_slug_recap(extraction),
         shell_svg,
+        receipt_svg,
         raw_json,
         str(svg_path),
+        str(receipt_path),
         str(skill_path),
         str(recap_path),
     )
@@ -126,12 +143,14 @@ def build_interface() -> gr.Blocks:
             with gr.Column(scale=2):
                 recap_output = gr.Markdown(label="slug recap")
                 shell_output = gr.HTML(label="your shell")
+                receipt_output = gr.HTML(label="your receipt")
 
         transcript_output = gr.Markdown(label="transcript")
         raw_json_output = gr.Code(label="Raw JSON", language="json")
 
         with gr.Row():
             svg_download = gr.File(label="shell.svg")
+            receipt_download = gr.File(label="receipt.svg")
             skill_download = gr.File(label="skill.md")
             recap_download = gr.File(label="slug_recap.txt")
 
@@ -142,8 +161,10 @@ def build_interface() -> gr.Blocks:
                 transcript_output,
                 recap_output,
                 shell_output,
+                receipt_output,
                 raw_json_output,
                 svg_download,
+                receipt_download,
                 skill_download,
                 recap_download,
             ],
