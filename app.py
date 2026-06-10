@@ -10,11 +10,33 @@ from pathlib import Path
 from typing import Any
 
 import gradio as gr
+import httpx
 
 from extract import extract_session
 from receipt import generate_receipt_svg
 from shell import generate_shell_svg
 from transcribe import transcribe_audio
+
+
+SLUGVOICE_URL = os.environ.get(
+    "MODAL_SLUGVOICE_URL",
+    "https://anubhavbharadwaaj--slugvoice-serve-slugvoiceserver-api.modal.run",
+)
+
+
+def _get_slugvoice(transcript: str) -> list[str] | None:
+    """Call the fine-tuned SlugVoice model on Modal."""
+    try:
+        resp = httpx.post(
+            SLUGVOICE_URL,
+            json={"transcript": transcript},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        return resp.json().get("slug_voice")
+    except Exception as e:
+        print(f"SlugVoice Modal call failed, falling back to Qwen: {e}")
+        return None
 
 
 def _get_audio_duration_minutes(file_path: str) -> float:
@@ -73,18 +95,23 @@ def process_audio(
     # 2. Extract session features + slug voice
     extraction = extract_session(transcript)
 
-    # 3. Override duration with actual audio length
+    # 3. Replace slug_voice with fine-tuned model output
+    slugvoice_lines = _get_slugvoice(transcript)
+    if slugvoice_lines:
+        extraction["slug_voice"] = slugvoice_lines
+
+    # 4. Override duration with actual audio length
     extraction["duration_minutes"] = round(
         _get_audio_duration_minutes(audio), 1
     )
 
     raw_json = json.dumps(extraction, indent=2)
 
-    # 4. Generate the shell SVG
+    # 5. Generate the shell SVG
     shell_svg = generate_shell_svg(extraction)
     receipt_svg = generate_receipt_svg(extraction)
 
-    # 5. Write downloadable files
+    # 6. Write downloadable files
     tmp_dir = Path(tempfile.mkdtemp(prefix="slug_"))
 
     svg_path = tmp_dir / "shell.svg"
