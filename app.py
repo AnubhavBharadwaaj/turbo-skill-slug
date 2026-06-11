@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64 as b64lib
 import json
 import os
 import tempfile
@@ -22,6 +23,10 @@ SLUGVOICE_URL = os.environ.get(
     "MODAL_SLUGVOICE_URL",
     "https://anubhavbharadwaaj--slugvoice-serve-slugvoiceserver-api.modal.run",
 )
+TTS_URL = os.environ.get(
+    "MODAL_TTS_URL",
+    "https://anubhavbharadwaaj--slugvoice-tts-slugtts-api.modal.run",
+)
 
 
 def _get_slugvoice(transcript: str) -> list[str] | None:
@@ -37,6 +42,23 @@ def _get_slugvoice(transcript: str) -> list[str] | None:
     except Exception as e:
         print(f"SlugVoice Modal call failed, falling back to Qwen: {e}")
         return None
+
+
+def _speak_recap(slug_lines: list[str]) -> str | None:
+    """Convert slug recap to speech via Chatterbox on Modal."""
+    try:
+        full_text = ". ".join(slug_lines) + ". I was here."
+        resp = httpx.post(TTS_URL, json={"text": full_text}, timeout=120)
+        resp.raise_for_status()
+        audio_b64 = resp.json().get("audio", "")
+        if audio_b64:
+            audio_bytes = b64lib.b64decode(audio_b64)
+            tmp = Path(tempfile.mkdtemp()) / "slug_speaks.wav"
+            tmp.write_bytes(audio_bytes)
+            return str(tmp)
+    except Exception as e:
+        print(f"TTS failed: {e}")
+    return None
 
 
 def _get_audio_duration_minutes(file_path: str) -> float:
@@ -83,11 +105,12 @@ def process_audio(
     str | None,
     str | None,
     str | None,
+    str | None,
 ]:
     """Transcribe, extract, generate shell, and return all outputs."""
     if audio is None:
         message = "Give the slug an audio file first."
-        return message, "", "", "", "", None, None, None, None
+        return message, "", "", "", "", None, None, None, None, None
 
     # 1. Transcribe
     transcript = transcribe_audio(audio)
@@ -99,6 +122,8 @@ def process_audio(
     slugvoice_lines = _get_slugvoice(transcript)
     if slugvoice_lines:
         extraction["slug_voice"] = slugvoice_lines
+
+    slug_audio_path = _speak_recap(extraction.get("slug_voice", []))
 
     # 4. Override duration with actual audio length
     extraction["duration_minutes"] = round(
@@ -134,6 +159,7 @@ def process_audio(
         shell_svg,
         receipt_svg,
         raw_json,
+        slug_audio_path,
         str(svg_path),
         str(receipt_path),
         str(skill_path),
@@ -169,6 +195,7 @@ def build_interface() -> gr.Blocks:
                 )
             with gr.Column(scale=2):
                 recap_output = gr.Markdown(label="slug recap")
+                slug_audio = gr.Audio(label="the slug speaks", type="filepath")
                 shell_output = gr.HTML(label="your shell")
                 receipt_output = gr.HTML(label="your receipt")
 
@@ -190,6 +217,7 @@ def build_interface() -> gr.Blocks:
                 shell_output,
                 receipt_output,
                 raw_json_output,
+                slug_audio,
                 svg_download,
                 receipt_download,
                 skill_download,
