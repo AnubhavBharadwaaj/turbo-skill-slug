@@ -128,10 +128,17 @@ def generate_receipt_svg(features: dict[str, Any]) -> str:
     add_gap(2)
     add_line("APPROACHES", bold=True, size=11, color=ACCENT, align="start")
     add_gap(2)
-    for i, approach in enumerate(approaches, 1):
+    has_breakthrough = len(breakthroughs) > 0
+    for i, approach in enumerate(approaches):
         name = approach.get("approach", "unknown")
         failed = approach.get("why_it_failed", "")
-        status = "FAIL" if failed else "OK"
+        is_last = (i == len(approaches) - 1)
+        if not failed:
+            status = "OK"
+        elif is_last and has_breakthrough:
+            status = "OK"
+        else:
+            status = "FAIL"
         add_dotted_row(f"  {_truncate(name, 24)}", status)
     if not approaches:
         add_line("  (none recorded)", size=10, color=FAINT, align="start")
