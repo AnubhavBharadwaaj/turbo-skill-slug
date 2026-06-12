@@ -124,10 +124,19 @@ def process_audio(
     # 3. Speak the recap aloud (Chatterbox TTS on Modal)
     slug_audio_path = _speak_recap(extraction.get("slug_voice", []))
 
-    # 4. Override duration with actual audio length
-    extraction["duration_minutes"] = round(
-        _get_audio_duration_minutes(audio), 1
-    )
+    # 4. Reconcile duration. The model estimates the DESCRIBED session length
+    #    from the transcript ("three hours on one problem"); the audio file
+    #    gives the NARRATION length. A real-time narration makes these agree;
+    #    a compressed retelling makes the audio far shorter than the real
+    #    session. Take the larger so the shell reflects the work, not the
+    #    speaking time.
+    audio_minutes = round(_get_audio_duration_minutes(audio), 1)
+    model_minutes = extraction.get("duration_minutes", 0)
+    try:
+        model_minutes = float(model_minutes)
+    except (TypeError, ValueError):
+        model_minutes = 0.0
+    extraction["duration_minutes"] = round(max(audio_minutes, model_minutes), 1)
 
     raw_json = json.dumps(extraction, indent=2)
 
@@ -196,8 +205,14 @@ def process_trace(trace_file: str | None):
     extraction = extract_session(transcript)
     slug_audio_path = _speak_recap(extraction.get("slug_voice", []))
 
-    # Duration: estimate from trace length since there is no audio file
-    extraction["duration_minutes"] = extraction.get("duration_minutes", 0) or 0
+    # Duration: no audio file, so trust the model's estimate of the described
+    # session length. Fall back to a minimum if the model gave nothing.
+    model_minutes = extraction.get("duration_minutes", 0)
+    try:
+        model_minutes = float(model_minutes)
+    except (TypeError, ValueError):
+        model_minutes = 0.0
+    extraction["duration_minutes"] = round(model_minutes, 1) if model_minutes > 0 else 1.0
 
     raw_json = json.dumps(extraction, indent=2)
     shell_svg = generate_shell_svg(extraction)
