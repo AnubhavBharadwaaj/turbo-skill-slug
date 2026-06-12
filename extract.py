@@ -1,17 +1,34 @@
-"""Session extraction utilities for TurboSkillSlug."""
+"""Session extraction utilities for TurboSkillSlug.
+
+Primary path: fine-tuned 1.5B extraction LoRA + voice LoRA served on Modal
+(one T4, two adapters). Total active inference for extraction + voice is ~1.5B,
+and with Whisper (809M) the full pipeline is ~2.6B.
+
+The Qwen-7B is retained ONLY as a labeled fallback when the Modal endpoint is
+unavailable (cold-start timeout, network error). The primary path does not use it.
+"""
 
 from __future__ import annotations
 
 import json
 import os
 import re
+import urllib.request
 from typing import Any
 
 from huggingface_hub import InferenceClient
 
 
+# Modal dual-adapter endpoint (extraction LoRA + voice LoRA on one T4)
+DUAL_URL = os.environ.get(
+    "MODAL_DUAL_URL",
+    "https://anubhavbharadwaaj--slug-dual-serve-dualserver-api.modal.run",
+)
+
+# Fallback only — not used in the primary path
 MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
 HF_TOKEN_ENV_VAR = "HF_TOKEN"
+
 EXPECTED_KEYS = {
     "duration_minutes",
     "themes",
@@ -37,6 +54,7 @@ REQUIRED_SKILL_MD_SECTIONS = (
     "Tags",
 )
 
+# Used only by the 7B fallback path
 SYSTEM_PROMPT = """\
 You are TurboSkillSlug, a slow earnest companion who watched this build \
 session from beginning to end. You speak as a witness who was present. \
@@ -104,6 +122,42 @@ def _strip_code_fences(content: str) -> str:
     return fenced_match.group(1).strip() if fenced_match else stripped
 
 
+def _extract_json_object(content: str) -> dict[str, Any] | None:
+    """Robustly pull the first complete JSON object, tolerating trailing text."""
+    text = _strip_code_fences(content)
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    escape = False
+    for i in range(start, len(text)):
+        c = text[i]
+        if escape:
+            escape = False
+            continue
+        if c == "\\":
+            escape = True
+            continue
+        if c == '"':
+            in_str = not in_str
+            continue
+        if not in_str:
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = re.sub(
+                        r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", text[start:i + 1]
+                    )
+                    try:
+                        return json.loads(candidate)
+                    except json.JSONDecodeError:
+                        return None
+    return None
+
+
 def _message_content(response: Any) -> str:
     """Extract assistant message content from a chat completion response."""
     if isinstance(response, dict):
@@ -122,14 +176,6 @@ def _message_content(response: Any) -> str:
     return str(response)
 
 
-def _parse_json_object(content: str) -> dict[str, Any]:
-    """Parse a JSON object from model content, tolerating code fences."""
-    parsed = json.loads(_strip_code_fences(content))
-    if not isinstance(parsed, dict):
-        raise ValueError("Expected the model response to be a JSON object.")
-    return parsed
-
-
 def _validate_sentiment_arc(payload: dict[str, Any]) -> None:
     """Clamp sentiment values to allowed sets instead of crashing."""
     sentiment_arc = payload.get("sentiment_arc")
@@ -142,7 +188,6 @@ def _validate_sentiment_arc(payload: dict[str, Any]) -> None:
 
     start = str(sentiment_arc.get("start", "")).lower().strip()
     if start not in SENTIMENT_START_VALUES:
-        # Map common invalid values to the closest valid one
         mapping = {
             "anxious": "frustrated",
             "nervous": "confused",
@@ -196,10 +241,8 @@ def _validate_slug_voice(payload: dict[str, Any]) -> None:
     if not isinstance(slug_voice, list):
         slug_voice = []
 
-    # Filter to non-empty strings
     slug_voice = [str(u).strip() for u in slug_voice if str(u).strip()]
 
-    # Pad or trim to exactly 5
     if len(slug_voice) > 5:
         slug_voice = slug_voice[:5]
     while len(slug_voice) < 5:
@@ -208,8 +251,63 @@ def _validate_slug_voice(payload: dict[str, Any]) -> None:
     payload["slug_voice"] = slug_voice
 
 
-def extract_session(transcript: str) -> dict[str, Any]:
-    """Extract a structured TurboSkillSlug session recap from a transcript."""
+def _fill_missing_keys(payload: dict[str, Any]) -> None:
+    """Default any missing optional keys so the smaller model's output survives."""
+    payload.setdefault("duration_minutes", 5)
+    payload.setdefault("themes", [])
+    payload.setdefault("approaches_tried", [])
+    payload.setdefault("dead_ends", [])
+    payload.setdefault("breakthroughs", [])
+    payload.setdefault("gotchas", [])
+    payload.setdefault("skill_md", "")
+    payload.setdefault("slug_voice", [])
+    payload.setdefault("sentiment_arc", {})
+
+
+def _finalize(payload: dict[str, Any]) -> dict[str, Any]:
+    """Run the full validator chain. Works for both Modal and fallback output."""
+    _fill_missing_keys(payload)
+    _validate_sentiment_arc(payload)
+    _validate_skill_md(payload)
+    _validate_slug_voice(payload)
+    return payload
+
+
+def _call_dual(transcript: str, mode: str, timeout: int = 120) -> dict[str, Any] | None:
+    """Call the Modal dual-adapter endpoint. Returns parsed JSON or None on failure."""
+    try:
+        data = json.dumps({"transcript": transcript, "mode": mode}).encode()
+        req = urllib.request.Request(
+            DUAL_URL, data=data, headers={"Content-Type": "application/json"}
+        )
+        resp = urllib.request.urlopen(req, timeout=timeout)
+        return json.loads(resp.read())
+    except Exception as e:
+        print(f"Modal dual endpoint ({mode}) failed: {e}")
+        return None
+
+
+def _extract_via_modal(transcript: str) -> dict[str, Any] | None:
+    """Primary path: extraction LoRA for the JSON, voice LoRA for slug_voice."""
+    extract_resp = _call_dual(transcript, "extract")
+    if not extract_resp or "extraction_raw" not in extract_resp:
+        return None
+
+    payload = _extract_json_object(extract_resp["extraction_raw"])
+    if not payload:
+        return None
+
+    # Override slug_voice with the dedicated voice adapter's output
+    voice_resp = _call_dual(transcript, "voice")
+    if voice_resp and isinstance(voice_resp.get("slug_voice"), list):
+        payload["slug_voice"] = voice_resp["slug_voice"]
+
+    return payload
+
+
+def _extract_via_fallback(transcript: str) -> dict[str, Any]:
+    """Fallback only: Qwen-7B via HF Inference. Used when Modal is unavailable."""
+    print("Falling back to Qwen-7B via HF Inference (Modal endpoint unavailable)")
     client = InferenceClient(token=os.environ.get(HF_TOKEN_ENV_VAR))
     response = client.chat.completions.create(
         model=MODEL_NAME,
@@ -219,15 +317,22 @@ def extract_session(transcript: str) -> dict[str, Any]:
         ],
         response_format={"type": "json_object"},
     )
-    payload = _parse_json_object(_message_content(response))
-
-    missing_keys = EXPECTED_KEYS - payload.keys()
-    if missing_keys:
-        missing = ", ".join(sorted(missing_keys))
-        raise ValueError(f"Model response missing expected keys: {missing}")
-
-    _validate_sentiment_arc(payload)
-    _validate_skill_md(payload)
-    _validate_slug_voice(payload)
-
+    payload = _extract_json_object(_message_content(response))
+    if payload is None:
+        raise ValueError("Fallback model did not return parseable JSON.")
     return payload
+
+
+def extract_session(transcript: str) -> dict[str, Any]:
+    """Extract a structured TurboSkillSlug session recap from a transcript.
+
+    Primary path uses the fine-tuned 1.5B extraction + voice LoRAs on Modal
+    (~2.6B total pipeline with Whisper). Falls back to Qwen-7B only if the
+    Modal endpoint is unavailable.
+    """
+    payload = _extract_via_modal(transcript)
+
+    if payload is None:
+        payload = _extract_via_fallback(transcript)
+
+    return _finalize(payload)
