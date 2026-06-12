@@ -287,6 +287,54 @@ def _call_dual(transcript: str, mode: str, timeout: int = 180) -> dict[str, Any]
         return None
 
 
+_COUNT_SENTENCE_RE = re.compile(
+    r"[^.]*\b(?:over the session|there were|failures?|successes?|tool runs?|"
+    r"dead ends?|breakthroughs?)\b[^.]*\d[^.]*\.",
+    re.IGNORECASE,
+)
+
+# Number words the voice model tends to invent
+_NUMBER_WORDS = (
+    "one", "two", "three", "four", "five",
+    "six", "seven", "eight", "nine", "ten",
+)
+
+# A voice line is "reciting a tally" if it pairs a count (digit or number word)
+# with an event noun. The slug witnesses moments; tallies belong on the receipt
+# and shell, not in its voice. Reciting counts is where it invents false ones.
+_TALLY_RE = re.compile(
+    r"\b(?:\d{1,2}|" + "|".join(_NUMBER_WORDS) + r")\b"
+    r"[^.]{0,40}?\b(?:failure|success|wall|walls|tool|tools|attempt|attempts|"
+    r"try|tries|step|steps|dead end|dead ends|breakthrough|breakthroughs|"
+    r"time|times|mistake|mistakes)\b",
+    re.IGNORECASE,
+)
+
+
+def _strip_count_summary(transcript: str) -> str:
+    """Remove count-summary sentences so the voice model describes moments,
+    not tallies. The footer like 'there were 2 failures, 1 successes...' is
+    exactly what makes the slug invent contradictory numbers."""
+    return _COUNT_SENTENCE_RE.sub("", transcript).strip()
+
+
+def _voice_line_recites_tally(line: str) -> bool:
+    """True if a line recites an event count (e.g. 'three walls', '2 failures').
+
+    The slug must never lie about what it witnessed, and the safest way to keep
+    it honest is to forbid it from reciting tallies at all. Counts live on the
+    receipt and in the shell; the voice describes specific moments. A line that
+    pairs a number with an event noun is dropped regardless of whether the
+    number happens to be right, because reciting counts is not the slug's job.
+    """
+    return bool(_TALLY_RE.search(line))
+
+
+def _guard_slug_voice(lines: list[str]) -> list[str]:
+    """Drop voice lines that recite event tallies (the source of false counts)."""
+    return [ln for ln in lines if not _voice_line_recites_tally(ln)]
+
+
 def _extract_via_modal(transcript: str) -> dict[str, Any] | None:
     """Primary path: extraction LoRA for the JSON, voice LoRA for slug_voice."""
     extract_resp = _call_dual(transcript, "extract")
@@ -297,10 +345,15 @@ def _extract_via_modal(transcript: str) -> dict[str, Any] | None:
     if not payload:
         return None
 
-    # Override slug_voice with the dedicated voice adapter's output
-    voice_resp = _call_dual(transcript, "voice")
+    # Override slug_voice with the dedicated voice adapter's output.
+    # Strip the count-summary footer first so the slug describes moments,
+    # not tallies (the footer is what makes it invent contradictory numbers).
+    voice_input = _strip_count_summary(transcript)
+    voice_resp = _call_dual(voice_input, "voice")
     if voice_resp and isinstance(voice_resp.get("slug_voice"), list):
-        payload["slug_voice"] = voice_resp["slug_voice"]
+        guarded = _guard_slug_voice(voice_resp["slug_voice"])
+        if guarded:  # only use voice output if at least one line survives
+            payload["slug_voice"] = guarded
 
     return payload
 
