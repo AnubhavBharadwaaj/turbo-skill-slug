@@ -273,7 +273,7 @@ def _finalize(payload: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def _call_dual(transcript: str, mode: str, timeout: int = 120) -> dict[str, Any] | None:
+def _call_dual(transcript: str, mode: str, timeout: int = 180) -> dict[str, Any] | None:
     """Call the Modal dual-adapter endpoint. Returns parsed JSON or None on failure."""
     try:
         data = json.dumps({"transcript": transcript, "mode": mode}).encode()
