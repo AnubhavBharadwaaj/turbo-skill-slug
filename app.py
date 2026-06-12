@@ -17,6 +17,7 @@ from extract import extract_session
 from receipt import generate_receipt_svg
 from shell import generate_shell_svg
 from transcribe import transcribe_audio
+from trace_parser import parse_trace_to_transcript, detect_trace_format
 
 
 TTS_URL = os.environ.get(
@@ -165,6 +166,74 @@ def process_audio(
     )
 
 
+
+def process_trace(trace_file: str | None):
+    """Parse an agent session JSONL trace and run it through the same pipeline.
+
+    A Claude Code or Codex CLI session log becomes witness testimony the slug
+    reads exactly like a spoken transcript. This is the input judges can feed
+    from their own machines.
+    """
+    if trace_file is None:
+        message = "Drop a Claude Code or Codex session trace first."
+        return message, "", "", "", "", None, None, None, None, None
+
+    try:
+        with open(trace_file, "r", encoding="utf-8", errors="replace") as f:
+            jsonl_string = f.read()
+    except Exception as e:
+        return f"Could not read the trace: {e}", "", "", "", "", None, None, None, None, None
+
+    source = detect_trace_format(jsonl_string)
+    transcript = parse_trace_to_transcript(jsonl_string)
+    if not transcript:
+        return (
+            "The slug could not find a session in that file.",
+            "", "", "", "", None, None, None, None, None,
+        )
+
+    # From here, identical to the audio path: extract, generate, render.
+    extraction = extract_session(transcript)
+    slug_audio_path = _speak_recap(extraction.get("slug_voice", []))
+
+    # Duration: estimate from trace length since there is no audio file
+    extraction["duration_minutes"] = extraction.get("duration_minutes", 0) or 0
+
+    raw_json = json.dumps(extraction, indent=2)
+    shell_svg = generate_shell_svg(extraction)
+    receipt_svg = generate_receipt_svg(extraction)
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="slug_trace_"))
+    svg_path = tmp_dir / "shell.svg"
+    svg_path.write_text(shell_svg)
+    receipt_path = tmp_dir / "receipt.svg"
+    receipt_path.write_text(receipt_svg)
+    skill_path = tmp_dir / "skill.md"
+    skill_path.write_text(extraction.get("skill_md", ""))
+    recap_lines = list(extraction.get("slug_voice", [])) + ["I was here."]
+    recap_path = tmp_dir / "slug_recap.txt"
+    recap_path.write_text("\n\n".join(recap_lines))
+
+    label = {"claude": "Claude Code", "codex": "Codex CLI"}.get(source, "agent")
+    transcript_display = (
+        f"## Session trace ({label})\n\n"
+        f"The slug read your {label} session and witnessed this:\n\n{transcript}"
+    )
+
+    return (
+        transcript_display,
+        _format_slug_recap(extraction),
+        shell_svg,
+        receipt_svg,
+        raw_json,
+        slug_audio_path,
+        str(svg_path),
+        str(receipt_path),
+        str(skill_path),
+        str(recap_path),
+    )
+
+
 def build_interface() -> gr.Blocks:
     """Build and return the TurboSkillSlug Gradio Blocks interface."""
     with gr.Blocks(title="TurboSkillSlug") as demo:
@@ -178,20 +247,43 @@ def build_interface() -> gr.Blocks:
 
         with gr.Row():
             with gr.Column(scale=1):
-                audio_input = gr.Audio(
-                    sources=["upload", "microphone"],
-                    type="filepath",
-                    label="your build session",
-                )
-                gr.Examples(
-                    examples=["sample_session.wav"],
-                    inputs=audio_input,
-                    label="or try a sample session",
-                )
-                submit_button = gr.Button(
-                    "🐌 give it to the slug", variant="primary", interactive=False
-                )
-                status_line = gr.Markdown("")
+                with gr.Tabs():
+                    with gr.Tab("narrate aloud"):
+                        audio_input = gr.Audio(
+                            sources=["upload", "microphone"],
+                            type="filepath",
+                            label="your build session",
+                        )
+                        gr.Examples(
+                            examples=["sample_session.wav"],
+                            inputs=audio_input,
+                            label="or try a sample session",
+                        )
+                        submit_button = gr.Button(
+                            "🐌 give it to the slug", variant="primary",
+                            interactive=False,
+                        )
+                        status_line = gr.Markdown("")
+                    with gr.Tab("drop a session trace"):
+                        gr.Markdown(
+                            "Drag a **Claude Code** "
+                            "(`~/.claude/projects/.../*.jsonl`) or **Codex CLI** "
+                            "(`~/.codex/sessions/.../*.jsonl`) session log. "
+                            "The slug reads your actual work, no narration needed."
+                        )
+                        trace_input = gr.File(
+                            label="session trace (.jsonl)",
+                            file_types=[".jsonl"],
+                            type="filepath",
+                        )
+                        gr.Examples(
+                            examples=["sample_trace.jsonl"],
+                            inputs=trace_input,
+                            label="or try a sample trace",
+                        )
+                        trace_button = gr.Button(
+                            "🐌 let the slug read it", variant="primary",
+                        )
             with gr.Column(scale=2):
                 recap_output = gr.Markdown(label="slug recap")
                 slug_audio = gr.Audio(label="the slug speaks", type="filepath")
@@ -244,6 +336,24 @@ def build_interface() -> gr.Blocks:
             ),
             inputs=None,
             outputs=[submit_button, status_line],
+        )
+
+        # Trace path: parse JSONL -> same pipeline, same outputs
+        trace_button.click(
+            fn=process_trace,
+            inputs=trace_input,
+            outputs=[
+                transcript_output,
+                recap_output,
+                shell_output,
+                receipt_output,
+                raw_json_output,
+                slug_audio,
+                svg_download,
+                receipt_download,
+                skill_download,
+                recap_download,
+            ],
         )
 
     return demo
