@@ -19,36 +19,17 @@ from shell import generate_shell_svg
 from transcribe import transcribe_audio
 
 
-SLUGVOICE_URL = os.environ.get(
-    "MODAL_SLUGVOICE_URL",
-    "https://anubhavbharadwaaj--slugvoice-serve-slugvoiceserver-api.modal.run",
-)
 TTS_URL = os.environ.get(
     "MODAL_TTS_URL",
     "https://anubhavbharadwaaj--slugvoice-tts-slugtts-api.modal.run",
 )
 
 
-def _get_slugvoice(transcript: str) -> list[str] | None:
-    """Call the fine-tuned SlugVoice model on Modal."""
-    try:
-        resp = httpx.post(
-            SLUGVOICE_URL,
-            json={"transcript": transcript},
-            timeout=60,
-        )
-        resp.raise_for_status()
-        return resp.json().get("slug_voice")
-    except Exception as e:
-        print(f"SlugVoice Modal call failed, falling back to Qwen: {e}")
-        return None
-
-
 def _speak_recap(slug_lines: list[str]) -> str | None:
     """Convert slug recap to speech via Chatterbox on Modal."""
     try:
         full_text = ". ".join(slug_lines) + ". I was here."
-        resp = httpx.post(TTS_URL, json={"text": full_text}, timeout=120)
+        resp = httpx.post(TTS_URL, json={"text": full_text}, timeout=180)
         resp.raise_for_status()
         audio_b64 = resp.json().get("audio", "")
         if audio_b64:
@@ -93,6 +74,24 @@ def _format_slug_recap(extraction: dict[str, Any]) -> str:
     )
 
 
+def on_audio_change(audio: str | None):
+    """Fired the moment a file is selected/recorded/cleared.
+
+    Disables the button and shows a 'preparing' state during the window
+    after upload but before the user can meaningfully click submit, so a
+    premature click is impossible and there is always visible feedback.
+    """
+    if audio is None:
+        return (
+            gr.update(value="🐌 give it to the slug", interactive=False),
+            gr.update(value=""),
+        )
+    return (
+        gr.update(value="🐌 give it to the slug", interactive=True),
+        gr.update(value="*The slug is ready. Hand it your session.*"),
+    )
+
+
 def process_audio(
     audio: str | None,
 ) -> tuple[
@@ -115,14 +114,13 @@ def process_audio(
     # 1. Transcribe
     transcript = transcribe_audio(audio)
 
-    # 2. Extract session features + slug voice
+    # 2. Extract session features + slug voice.
+    #    extract_session uses the Modal dual-adapter endpoint:
+    #    extraction LoRA for the JSON, voice LoRA for slug_voice.
+    #    The 7B is only a labeled fallback inside extract_session.
     extraction = extract_session(transcript)
 
-    # 3. Replace slug_voice with fine-tuned model output
-    slugvoice_lines = _get_slugvoice(transcript)
-    if slugvoice_lines:
-        extraction["slug_voice"] = slugvoice_lines
-
+    # 3. Speak the recap aloud (Chatterbox TTS on Modal)
     slug_audio_path = _speak_recap(extraction.get("slug_voice", []))
 
     # 4. Override duration with actual audio length
@@ -132,7 +130,7 @@ def process_audio(
 
     raw_json = json.dumps(extraction, indent=2)
 
-    # 5. Generate the shell SVG
+    # 5. Generate the shell + receipt SVGs
     shell_svg = generate_shell_svg(extraction)
     receipt_svg = generate_receipt_svg(extraction)
 
@@ -148,8 +146,8 @@ def process_audio(
     skill_path = tmp_dir / "skill.md"
     skill_path.write_text(extraction.get("skill_md", ""))
 
-    recap_lines = extraction.get("slug_voice", [])
-    recap_lines.append("I was here.")
+    # Build recap text WITHOUT mutating the extraction's slug_voice list
+    recap_lines = list(extraction.get("slug_voice", [])) + ["I was here."]
     recap_path = tmp_dir / "slug_recap.txt"
     recap_path.write_text("\n\n".join(recap_lines))
 
@@ -191,8 +189,9 @@ def build_interface() -> gr.Blocks:
                     label="or try a sample session",
                 )
                 submit_button = gr.Button(
-                    "🐌 give it to the slug", variant="primary"
+                    "🐌 give it to the slug", variant="primary", interactive=False
                 )
+                status_line = gr.Markdown("")
             with gr.Column(scale=2):
                 recap_output = gr.Markdown(label="slug recap")
                 slug_audio = gr.Audio(label="the slug speaks", type="filepath")
@@ -208,7 +207,22 @@ def build_interface() -> gr.Blocks:
             skill_download = gr.File(label="skill.md")
             recap_download = gr.File(label="slug_recap.txt")
 
+        # Enable the button + show readiness only once audio is actually present
+        audio_input.change(
+            fn=on_audio_change,
+            inputs=audio_input,
+            outputs=[submit_button, status_line],
+        )
+
+        # On click: immediately show a working state, then run the pipeline
         submit_button.click(
+            fn=lambda: (
+                gr.update(value="🐌 the slug is watching…", interactive=False),
+                gr.update(value="*The slug is listening. This takes a moment.*"),
+            ),
+            inputs=None,
+            outputs=[submit_button, status_line],
+        ).then(
             fn=process_audio,
             inputs=audio_input,
             outputs=[
@@ -223,6 +237,13 @@ def build_interface() -> gr.Blocks:
                 skill_download,
                 recap_download,
             ],
+        ).then(
+            fn=lambda: (
+                gr.update(value="🐌 give it to the slug", interactive=True),
+                gr.update(value="*The slug has finished. Scroll down for your gifts.*"),
+            ),
+            inputs=None,
+            outputs=[submit_button, status_line],
         )
 
     return demo
