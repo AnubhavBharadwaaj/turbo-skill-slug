@@ -17,6 +17,7 @@ import httpx
 from extract import extract_session
 from receipt import generate_receipt_svg
 from shell import generate_shell_svg
+from shell_animate import animate_shell_svg
 from transcribe import transcribe_audio
 from trace_parser import parse_trace_to_transcript, detect_trace_format
 
@@ -111,6 +112,11 @@ def _finalize_outputs(transcript_display: str, extraction: dict, slug_audio_path
     """
     raw_json = json.dumps(extraction, indent=2)
     shell_svg = generate_shell_svg(extraction, growth=1.0)
+    # Wrap the finished shell with a browser-played birth animation
+    # (shards / draw / glass, chosen randomly per shell). The download
+    # file stays the clean static SVG; only the inline display animates.
+    anim_seed = hash(str(extraction.get("duration_minutes", 0))) % 10000
+    shell_display = animate_shell_svg(shell_svg, seed=anim_seed)
     receipt_svg = generate_receipt_svg(extraction)
 
     tmp_dir = Path(tempfile.mkdtemp(prefix="slug_"))
@@ -127,7 +133,7 @@ def _finalize_outputs(transcript_display: str, extraction: dict, slug_audio_path
     return (
         transcript_display,
         _format_slug_recap(extraction),
-        shell_svg,
+        shell_display,
         receipt_svg,
         raw_json,
         slug_audio_path,
@@ -139,23 +145,16 @@ def _finalize_outputs(transcript_display: str, extraction: dict, slug_audio_path
 
 
 def _grow_shell_stages(extraction: dict, transcript_display: str):
-    """Yield the shell at each growth stage, holding other outputs empty until
-    the shell is fully grown. The final result is yielded by the caller.
-
-    This is the live terrarium effect: the slug grows the shell as it watches,
-    spiral lengthening, knots and jewels forming in order, aperture opening last.
+    """Yield a single 'shaping' status while the browser-played birth animation
+    is prepared. The smooth growth now happens in the browser (shards / draw /
+    glass), so we no longer stream mechanical server-side frames. One gentle
+    status, then the caller yields the finished animated shell.
     """
-    for g in GROWTH_STAGES:
-        if g >= 1.0:
-            break
-        partial = generate_shell_svg(extraction, growth=g)
-        yield (
-            "*The slug is growing your shell...*",
-            f"*growing... {int(g*100)}%*",
-            partial,
-            "", "", None, None, None, None, None,
-        )
-        time.sleep(GROWTH_PACING_SECONDS)
+    yield (
+        "*The slug is shaping your shell...*",
+        "*the shell is coming into being...*",
+        "", "", "", None, None, None, None, None,
+    )
 
 
 def process_audio(audio: str | None):

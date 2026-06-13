@@ -289,7 +289,7 @@ def generate_shell_svg(features: dict[str, Any], growth: float = 1.0) -> str:
         f'transform="translate(3, 4)" filter="url(#depth)"/>'
     )
     svg.append(
-        f'<path d="{body_d}" fill="url(#bodyGrad)" '
+        f'<path class="shell-body" d="{body_d}" fill="url(#bodyGrad)" '
         f'stroke="{pal["septa"]}" stroke-width="0.5" filter="url(#nacre)"/>'
     )
 
@@ -326,14 +326,14 @@ def generate_shell_svg(features: dict[str, Any], growth: float = 1.0) -> str:
     # ---- CENTERLINE shimmer ----
     cl_path = _smooth_path(centerline)
     svg.append(
-        f'<path d="{cl_path}" fill="none" '
+        f'<path class="shell-centerline" d="{cl_path}" fill="none" '
         f'stroke="{pal["highlight"]}" stroke-width="0.5" opacity="0.4"/>'
     )
 
     # ---- OUTER RIM GLOW ----
     rim_path = _smooth_path(outer_pts)
     svg.append(
-        f'<path d="{rim_path}" fill="none" '
+        f'<path class="shell-rim" d="{rim_path}" fill="none" '
         f'stroke="{pal["accent"]}" stroke-width="2.5" opacity="0.15" '
         f'filter="url(#jewelGlow)"/>'
     )
@@ -373,7 +373,7 @@ def generate_shell_svg(features: dict[str, Any], growth: float = 1.0) -> str:
             f'fill="{pal["bg_deep"]}" opacity="0.5" filter="url(#depth)"/>'
         )
         svg.append(
-            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{kr:.1f}" '
+            f'<circle class="shell-knot" cx="{x:.1f}" cy="{y:.1f}" r="{kr:.1f}" '
             f'fill="{pal["knot"]}" stroke="{pal["body_dark"]}" '
             f'stroke-width="1" opacity="0.9"/>'
         )
@@ -399,7 +399,7 @@ def generate_shell_svg(features: dict[str, Any], growth: float = 1.0) -> str:
             f'fill="{pal["jewel"]}" opacity="0.3" filter="url(#jewelGlow)"/>'
         )
         svg.append(
-            f'<circle cx="{jx:.1f}" cy="{jy:.1f}" r="4.5" '
+            f'<circle class="shell-jewel" cx="{jx:.1f}" cy="{jy:.1f}" r="4.5" '
             f'fill="url(#jewelGrad)" opacity="0.95"/>'
         )
         svg.append(
@@ -422,7 +422,7 @@ def generate_shell_svg(features: dict[str, Any], growth: float = 1.0) -> str:
             f'fill="{pal["accent"]}" opacity="{0.15 * aperture_op:.2f}" filter="url(#glow)"/>'
         )
         svg.append(
-            f'<ellipse cx="{bx:.1f}" cy="{by:.1f}" '
+            f'<ellipse class="shell-aperture" cx="{bx:.1f}" cy="{by:.1f}" '
             f'rx="{bth * 1.2:.1f}" ry="{bth * 0.9:.1f}" '
             f'transform="rotate({math.degrees(bn):.0f} {bx:.1f} {by:.1f})" '
             f'fill="url(#apertureGrad)" opacity="{0.95 * aperture_op:.2f}"/>'
