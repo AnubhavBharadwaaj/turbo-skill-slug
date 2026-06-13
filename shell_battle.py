@@ -289,6 +289,14 @@ def _point_at_radius_frac(centerline, rfrac):
     return centerline[best_i]
 
 
+
+def _fig(pos_frac: float, inner_svg: str) -> str:
+    """Wrap a figure cluster in a group tagged with its unroll position (0..1),
+    so the birth animation can ink it in when the scroll reaches it."""
+    p = max(0.0, min(1.0, float(pos_frac)))
+    return f'<g class="battle-fig" data-pos="{p:.3f}">{inner_svg}</g>'
+
+
 def build_battle_layer(features: dict, centerline: list, outer_pts: list,
                        thickness_at, n_full: int, pal: dict, seed: int) -> str:
     """Return the byobu battle layer SVG, placed on the shell's spiral by RADIUS
@@ -304,26 +312,27 @@ def build_battle_layer(features: dict, centerline: list, outer_pts: list,
     parts = ["<g class=\"battle-layer\">"]
 
     # ---- gold cloud bands drifting across the OUTER field ----
+    # Clouds are atmosphere; they ink in early and at their radius position.
     for i in range(3):
         rfrac = 0.55 + 0.15 * i
         p = _point_at_radius_frac(centerline, min(0.95, rfrac))
         if p:
             x, y = p[0], p[1]
-            parts.append(_cloud_band(x, y, w=rng.uniform(120, 180),
-                                     h=rng.uniform(30, 44), seed=seed + i))
+            parts.append(_fig(min(0.95, rfrac), _cloud_band(
+                x, y, w=rng.uniform(120, 180), h=rng.uniform(30, 44), seed=seed + i)))
 
-    # ---- the general (developer): pushed to a clear mid-outer arm so it does
-    # not pile onto the figures near the crowded eye ----
+    # ---- the general (developer): mid-outer arm. Inks in when scroll reaches 0.66.
     p = _point_at_radius_frac(centerline, 0.66)
     if p:
         gx, gy = p[0], p[1]
-        parts.append(_gold_backing(gx, gy - 10, 30))
-        parts.append(_general(gx, gy, s=40))
-        parts.append(_banner(gx + 26, gy + 4, h=46, color=INK))
+        general = (
+            _gold_backing(gx, gy - 10, 30)
+            + _general(gx, gy, s=40)
+            + _banner(gx + 26, gy + 4, h=46, color=INK)
+        )
+        parts.append(_fig(0.66, general))
 
-    # ---- fallen warriors at each dead end, placed by RADIUS ----
-    # Map each dead-end's position (0..1) to a radius fraction in the OUTER
-    # two-thirds of the shell so they land on visible arms.
+    # ---- fallen warriors at each dead end, placed + revealed by RADIUS ----
     for de in dead_ends:
         pos = max(0.0, min(1.0, float(de.get("position", 0.5))))
         rfrac = 0.48 + pos * 0.46  # 0.48 .. 0.94 (keep out of the crowded eye)
@@ -331,13 +340,15 @@ def build_battle_layer(features: dict, centerline: list, outer_pts: list,
         if not p:
             continue
         x, y = p[0], p[1]
-        parts.append(_gold_backing(x, y, 22))
-        parts.append(_fallen(x, y, s=28, ink=INK))
-        parts.append(_banner(x + 12, y - 2, h=26, color=INK, broken=True,
-                             angle=rng.uniform(-12, 12)))
+        fallen = (
+            _gold_backing(x, y, 22)
+            + _fallen(x, y, s=28, ink=INK)
+            + _banner(x + 12, y - 2, h=26, color=INK, broken=True,
+                      angle=rng.uniform(-12, 12))
+        )
+        parts.append(_fig(rfrac, fallen))
 
-    # ---- archers along the rim at each gotcha (outer rim, by index is fine
-    # here because outer_pts already traces the visible outer edge) ----
+    # ---- archers along the rim at each gotcha ----
     n_arch = min(len(gotchas), 8)
     for i in range(n_arch):
         frac = 0.52 + (i / max(1, n_arch)) * 0.44
@@ -347,23 +358,22 @@ def build_battle_layer(features: dict, centerline: list, outer_pts: list,
         ox, oy, _, _, nrm = outer_pts[idx]
         ax = ox + math.cos(nrm) * 18
         ay = oy + math.sin(nrm) * 18
-        parts.append(_gold_backing(ax, ay, 15))
-        parts.append(_archer(ax, ay, s=24, ink=INK))
+        archer = _gold_backing(ax, ay, 15) + _archer(ax, ay, s=24, ink=INK)
+        parts.append(_fig(frac, archer))
 
-    # ---- the dragon (breakthrough): placed just BEFORE the aperture tip so it
-    # is not washed out by the aperture glow, larger, coiling toward the mouth ----
+    # ---- the dragon (breakthrough): inks in LAST, when the scroll reaches the tip.
     tip = centerline[-1]
-    pre = centerline[max(0, len(centerline) - 18)]  # a little back from the tip
+    pre = centerline[max(0, len(centerline) - 18)]
     dx, dy = pre[0], pre[1]
     bn = tip[4]
-    # a darker gold cloud behind the dragon so it reads against the glow
-    parts.append(
+    dragon = (
         f'<ellipse cx="{dx:.1f}" cy="{dy:.1f}" rx="46" ry="30" '
         f'transform="rotate({math.degrees(bn):.0f} {dx:.1f} {dy:.1f})" '
         f'fill="{GOLD}" opacity="0.30"/>'
+        + _dragon(dx, dy, s=42, angle_deg=math.degrees(bn) + 150)
+        + _banner(dx - 20, dy + 10, h=56, color=INK)
     )
-    parts.append(_dragon(dx, dy, s=42, angle_deg=math.degrees(bn) + 150))
-    parts.append(_banner(dx - 20, dy + 10, h=56, color=INK))
+    parts.append(_fig(1.0, dragon))
 
     parts.append("</g>")
     return "\n".join(parts)

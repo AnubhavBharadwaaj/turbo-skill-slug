@@ -1,201 +1,123 @@
 """
-Browser-rendered birth animations for the shell, using SMIL.
+Scroll-unroll birth animation for the shell.
 
-Gradio's gr.HTML sanitizes embedded <style> blocks, so CSS animation does not
-survive. SMIL animation elements (<animate>, <animateTransform>, <set>) are part
-of the SVG spec itself and render inside an <svg> even when CSS is stripped.
+The shell is born like a scroll unrolling: the spiral draws itself from the eye
+outward, and as the unrolling "reaches" each position, the byobu battle figures
+get inked onto it in sequence, like a narrative being painted across a folding
+screen. The breakthrough dragon is the last thing to appear, at the tip.
 
-The shell is generated once as a static SVG. This module injects SMIL animation
-into the tagged elements so the BROWSER plays a smooth one-shot birth, then
-holds the final (static) frame via fill="freeze".
+Implemented with SMIL (native SVG animation) so it survives Gradio's HTML
+sanitizer, wrapped in an <iframe srcdoc> so even the sanitizer's outer pass
+cannot strip it. fill="freeze" holds the final static shell.
 
-Three styles, chosen per shell:
-  "shards" - knots & jewels fly in from scattered offsets and crystallize
-  "draw"   - the spiral draws itself outward; knots/jewels bloom in sequence
-  "glass"  - the shell fades up from translucent saturated glass to solid nacre
-
-All styles end on the exact static shell (freeze), so nothing is lost.
+Timing model (total ~ SCROLL_DUR + a beat):
+  0.0s ............................. spiral begins unrolling from the eye
+  0.0 .. SCROLL_DUR ................ spiral draws outward; figures ink in at
+                                     begin = pos * SCROLL_DUR (synced to the
+                                     unrolling front passing each figure)
+  SCROLL_DUR + .. ................. dragon + aperture settle
 """
 
 from __future__ import annotations
 
-from anim_diagnostic import inject_probe
-
-import random
 import re
 
-STYLES = ("shards", "draw", "glass")
+from anim_diagnostic import inject_probe
 
 # Set False for final submission; True shows a live badge reporting whether the
 # SMIL animation is present and actually running inside the iframe.
 DIAGNOSTIC = False
 
-
-def pick_style(seed) -> str:
-    return random.Random(seed).choice(STYLES)
-
-
-def _animate_attr(el_match_re, svg, anim_xml):
-    """Insert anim_xml before the self-closing /> of each matching element,
-    converting <tag .../> into <tag ...>anim</tag>."""
-    def repl(m):
-        tag = m.group(0)
-        # turn '<circle .../>' into '<circle ...>{anim}</circle>'
-        inner = tag[:-2].rstrip()  # drop '/>'
-        tagname = re.match(r"<(\w+)", tag).group(1)
-        return f"{inner}>{anim_xml}</{tagname}>"
-    return re.sub(el_match_re, repl, svg)
+SCROLL_DUR = 3.2          # seconds for the spiral to fully unroll
+FIG_FADE = 0.7            # seconds each figure takes to ink in
+DRAGON_EXTRA = 0.5        # the dragon lands a beat after the scroll completes
 
 
-def _shards(svg: str, rng: random.Random) -> str:
-    # Body: fade up (cooling glass) via opacity animate
-    body_anim = (
-        '<animate attributeName="opacity" from="0" to="1" '
-        'dur="2.6s" begin="0.3s" fill="freeze"/>'
-    )
-    svg = _animate_attr(r'<path class="shell-body"[^>]*/>', svg, body_anim)
-
-    # Knots & jewels: fly in from a random offset + fade, via animateTransform
-    def fly(cls, delay):
-        def repl(m):
-            tag = m.group(0)
-            dx = rng.uniform(-200, 200)
-            dy = rng.uniform(-200, 200)
-            inner = tag[:-2].rstrip()
-            anim = (
-                f'<animateTransform attributeName="transform" type="translate" '
-                f'from="{dx:.0f} {dy:.0f}" to="0 0" dur="2.4s" begin="{delay}s" '
-                f'fill="freeze" calcMode="spline" keySplines="0.2 0.8 0.2 1" keyTimes="0;1"/>'
-                f'<animate attributeName="opacity" from="0" to="{0.9 if cls=="shell-knot" else 0.95}" '
-                f'dur="2.0s" begin="{delay}s" fill="freeze"/>'
-            )
-            return f"{inner}>{anim}</circle>"
-        return repl
-    svg = re.sub(r'<circle class="shell-knot"[^>]*/>', fly("shell-knot", 0.1), svg)
-    svg = re.sub(r'<circle class="shell-jewel"[^>]*/>', fly("shell-jewel", 0.35), svg)
-
-    # Aperture opens last
-    svg = _aperture_open(svg, begin=1.2)
-    return svg
-
-
-def _draw(svg: str) -> str:
-    # Centerline and rim: draw via stroke-dashoffset animation.
-    # SMIL can animate stroke-dashoffset; we set a large dasharray inline.
+def _animate_spiral_draw(svg: str) -> str:
+    """Make the centerline + rim draw themselves outward (the scroll unrolling)."""
     def draw_path(m):
         tag = m.group(0)
-        inner = tag[:-2].rstrip()
-        # add dasharray, animate dashoffset from big->0
-        inner = inner.replace("<path", '<path stroke-dasharray="6000"', 1)
+        inner = tag[:-2].rstrip() if tag.endswith("/>") else tag
+        # large dasharray so the whole path is initially "undrawn"
+        inner = inner.replace("<path", '<path stroke-dasharray="7000"', 1)
         anim = (
-            '<animate attributeName="stroke-dashoffset" from="6000" to="0" '
-            'dur="3.2s" begin="0.3s" fill="freeze"/>'
+            f'<animate attributeName="stroke-dashoffset" from="7000" to="0" '
+            f'dur="{SCROLL_DUR}s" begin="0s" fill="freeze"/>'
         )
         return f"{inner}>{anim}</path>"
     svg = re.sub(r'<path class="shell-centerline"[^>]*/>', draw_path, svg)
     svg = re.sub(r'<path class="shell-rim"[^>]*/>', draw_path, svg)
-
-    # Body fades in behind the drawing line
-    body_anim = (
-        '<animate attributeName="opacity" from="0" to="1" '
-        'dur="3.4s" begin="0.6s" fill="freeze"/>'
-    )
-    svg = _animate_attr(r'<path class="shell-body"[^>]*/>', svg, body_anim)
-
-    # Knots/jewels bloom (scale 0->1) with staggered delays
-    def bloom(delay):
-        def repl(m):
-            tag = m.group(0)
-            inner = tag[:-2].rstrip()
-            anim = (
-                f'<animateTransform attributeName="transform" type="scale" '
-                f'from="0" to="1" dur="0.6s" begin="{delay}s" fill="freeze" '
-                f'additive="sum"/>'
-                f'<animate attributeName="opacity" from="0" to="0.95" '
-                f'dur="0.5s" begin="{delay}s" fill="freeze"/>'
-            )
-            return f"{inner}>{anim}</circle>"
-        return repl
-    # stagger by occurrence using incremental delays
-    svg = _stagger_bloom(svg, "shell-knot", base=0.6, step=0.3)
-    svg = _stagger_bloom(svg, "shell-jewel", base=1.0, step=0.2)
-
-    svg = _aperture_open(svg, begin=1.8)
     return svg
 
 
-def _glass(svg: str) -> str:
-    # Body solidifies: opacity 0->1 (the saturate/blur part needs CSS filters,
-    # which Gradio strips, so we approximate the "glass" feel with a staged
-    # opacity + a brief over-bright flash via a second opacity pulse).
-    body_anim = (
-        '<animate attributeName="opacity" values="0;0.5;1" keyTimes="0;0.5;1" '
-        'dur="3.4s" begin="0.3s" fill="freeze"/>'
-    )
-    svg = _animate_attr(r'<path class="shell-body"[^>]*/>', svg, body_anim)
-
-    # Knots & jewels twinkle in
-    twinkle = (
-        '<animate attributeName="opacity" values="0;1" dur="2.4s" '
-        'begin="1.0s" fill="freeze"/>'
-    )
-    svg = _animate_attr(r'<circle class="shell-knot"[^>]*/>', svg, twinkle)
-    svg = _animate_attr(r'<circle class="shell-jewel"[^>]*/>', svg, twinkle)
-
-    svg = _aperture_open(svg, begin=1.4)
-    return svg
-
-
-def _stagger_bloom(svg, cls, base, step):
-    """Apply scale-bloom with incrementing delay to each element of class cls."""
-    pattern = re.compile(rf'<circle class="{cls}"[^>]*/>')
-    matches = list(pattern.finditer(svg))
-    # process in reverse so indices stay valid
-    for i in range(len(matches) - 1, -1, -1):
-        m = matches[i]
-        tag = m.group(0)
-        delay = base + i * step
-        inner = tag[:-2].rstrip()
-        anim = (
-            f'<animateTransform attributeName="transform" type="scale" '
-            f'from="0" to="1" dur="0.6s" begin="{delay:.2f}s" fill="freeze" additive="sum"/>'
-            f'<animate attributeName="opacity" from="0" to="0.95" '
-            f'dur="0.5s" begin="{delay:.2f}s" fill="freeze"/>'
-        )
-        new = f"{inner}>{anim}</circle>"
-        svg = svg[:m.start()] + new + svg[m.end():]
-    return svg
-
-
-def _aperture_open(svg: str, begin: float) -> str:
-    """The breakthrough mouth opens last: scale + fade, frozen open."""
+def _animate_body_unfurl(svg: str) -> str:
+    """The shell body fades up as the scroll unrolls (the parchment appearing)."""
     def repl(m):
         tag = m.group(0)
-        inner = tag[:-2].rstrip()
+        inner = tag[:-2].rstrip() if tag.endswith("/>") else tag
+        anim = (
+            f'<animate attributeName="opacity" from="0" to="1" '
+            f'dur="{SCROLL_DUR}s" begin="0s" fill="freeze"/>'
+        )
+        return f"{inner}>{anim}</path>"
+    return re.sub(r'<path class="shell-body"[^>]*/>', repl, svg, count=1)
+
+
+def _ink_figures(svg: str) -> str:
+    """Each battle-fig group inks in (fade + slight rise) when the unrolling front
+    reaches its data-pos. begin = pos * SCROLL_DUR."""
+    def repl(m):
+        tag = m.group(0)  # the opening <g class="battle-fig" data-pos="X">
+        pos_match = re.search(r'data-pos="([\d.]+)"', tag)
+        pos = float(pos_match.group(1)) if pos_match else 0.5
+        begin = round(pos * SCROLL_DUR, 2)
+        # the dragon (pos==1.0) gets a small extra beat so it lands last
+        if pos >= 0.999:
+            begin = round(SCROLL_DUR + DRAGON_EXTRA, 2)
+        anim = (
+            f'<animate attributeName="opacity" from="0" to="1" '
+            f'dur="{FIG_FADE}s" begin="{begin}s" fill="freeze"/>'
+            f'<animateTransform attributeName="transform" type="translate" '
+            f'from="0 10" to="0 0" dur="{FIG_FADE}s" begin="{begin}s" '
+            f'fill="freeze" calcMode="spline" keySplines="0.2 0.8 0.2 1" keyTimes="0;1"/>'
+        )
+        # Inject the anim right after the tag. We do NOT hard-set opacity="0" on
+        # the group as a static attribute: if a browser failed to run SMIL, that
+        # would leave the figure invisible (worse than no animation). The
+        # <animate from="0"> drives the ink-in; freeze holds it; and a no-SMIL
+        # browser simply shows the figure at its natural opacity.
+        return tag + anim
+    return re.sub(r'<g class="battle-fig" data-pos="[\d.]+">', repl, svg)
+
+
+def _animate_aperture(svg: str) -> str:
+    """The breakthrough aperture opens last, with the dragon."""
+    def repl(m):
+        tag = m.group(0)
+        inner = tag[:-2].rstrip() if tag.endswith("/>") else tag
+        begin = round(SCROLL_DUR + DRAGON_EXTRA, 2)
         anim = (
             f'<animate attributeName="opacity" from="0" to="0.95" '
-            f'dur="0.8s" begin="{begin}s" fill="freeze"/>'
+            f'dur="0.9s" begin="{begin}s" fill="freeze"/>'
         )
         return f"{inner}>{anim}</ellipse>"
     return re.sub(r'<ellipse class="shell-aperture"[^>]*/>', repl, svg)
 
 
 def animate_shell_svg(svg: str, seed=0, style: str | None = None) -> str:
-    """Inject SMIL birth animation into a finished shell SVG. Survives Gradio
-    HTML sanitization (SMIL is part of SVG, not CSS). Ends on the static shell.
-    """
-    rng = random.Random(seed)
-    chosen = style or rng.choice(STYLES)
-    if chosen == "shards":
-        return _shards(svg, rng)
-    if chosen == "draw":
-        return _draw(svg)
-    return _glass(svg)
+    """Inject the scroll-unroll birth animation. `style`/`seed` kept for API
+    compatibility; there is now one cohesive narrative animation."""
+    svg = _animate_body_unfurl(svg)
+    svg = _animate_spiral_draw(svg)
+    svg = _ink_figures(svg)
+    svg = _animate_aperture(svg)
+    return svg
 
 
+# ---- iframe wrapping (survives Gradio sanitizer) + replay button -------------
 
 REPLAY_HTML = """
-<button id="replay-birth" title="watch the shell grow again">↻ watch it grow again</button>
+<button id="replay-birth" title="watch the shell grow again">\u21bb watch it grow again</button>
 <style>
 #replay-birth{
   position:fixed;left:50%;bottom:10px;transform:translateX(-50%);
@@ -230,15 +152,10 @@ def inject_replay(iframe_inner_html: str) -> str:
 
 
 def wrap_in_iframe(animated_svg: str, height: int = 660) -> str:
-    """Wrap an animated SVG in an <iframe srcdoc> so Gradio's HTML sanitizer
-    cannot strip the SMIL animation. The iframe is an isolated document; its
-    srcdoc contents render verbatim, animation intact.
-
-    Gradio's gr.HTML sanitizes top-level <svg>/<animate>, but it does NOT parse
-    into iframe srcdoc, so the animation survives.
-    """
+    """Wrap the animated SVG in an <iframe srcdoc> so Gradio's HTML sanitizer
+    cannot strip the SMIL animation. Rendered as a centered square so the WHOLE
+    shell shows (no top/bottom clipping)."""
     import html as _html
-    # The SVG becomes a full tiny HTML document inside the iframe
     doc = (
         "<!DOCTYPE html><html><head><style>"
         "html,body{margin:0;padding:0;background:transparent;overflow:hidden;"
@@ -250,9 +167,6 @@ def wrap_in_iframe(animated_svg: str, height: int = 660) -> str:
         doc = inject_probe(doc)
     doc = inject_replay(doc)
     escaped = _html.escape(doc, quote=True)
-    # The shell is square. Render the iframe as a centered square that fits the
-    # column width but caps at `height`px tall, so the WHOLE shell shows (no
-    # top/bottom clipping). max-width keeps it from ballooning on wide screens.
     return (
         f'<div style="display:flex;justify-content:center;width:100%;">'
         f'<iframe srcdoc="{escaped}" '

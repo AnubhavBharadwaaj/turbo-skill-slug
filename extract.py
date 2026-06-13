@@ -218,21 +218,35 @@ def _validate_sentiment_arc(payload: dict[str, Any]) -> None:
 
 
 def _validate_skill_md(payload: dict[str, Any]) -> None:
-    """Patch missing skill_md sections instead of blocking the full response."""
-    skill_md = payload.get("skill_md", "")
-    if not isinstance(skill_md, str):
-        skill_md = str(skill_md)
+    """Build the SKILL.md from the structured extraction rather than trusting the
+    model's raw prose.
 
-    missing_sections = [
-        section
-        for section in REQUIRED_SKILL_MD_SECTIONS
-        if section not in skill_md
-    ]
-    if missing_sections:
-        skeleton = "\n\n".join(
-            f"## {section}\n_(not captured)_" for section in missing_sections
-        )
-        payload["skill_md"] = f"{skill_md}\n\n{skeleton}"
+    The model is good at extracting the structure (approaches, why each failed,
+    gotchas, what worked). Assembling that into a genuinely useful, transferable
+    skill — gotchas-first, with explicit 'what not to do and why' — is mechanical
+    and is done deterministically so every skill has the shape that gives an LLM
+    real uplift over solving from scratch. See skill_builder for the rationale.
+    """
+    try:
+        from skill_builder import build_skill_md
+        payload["skill_md"] = build_skill_md(payload)
+        return
+    except Exception:
+        # If the builder fails for any reason, fall back to patching the model's
+        # raw skill_md so we never block the response.
+        skill_md = payload.get("skill_md", "")
+        if not isinstance(skill_md, str):
+            skill_md = str(skill_md)
+        missing_sections = [
+            section
+            for section in REQUIRED_SKILL_MD_SECTIONS
+            if section not in skill_md
+        ]
+        if missing_sections:
+            skeleton = "\n\n".join(
+                f"## {section}\n_(not captured)_" for section in missing_sections
+            )
+            payload["skill_md"] = f"{skill_md}\n\n{skeleton}"
 
 
 def _validate_slug_voice(payload: dict[str, Any]) -> None:
