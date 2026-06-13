@@ -68,11 +68,9 @@ duration_minutes: integer, your best estimate from the transcript.
 themes: list of 2 to 4 short lowercase tag strings.
 
 approaches_tried: list of objects, each with "approach" (short phrase) and \
-"why_it_failed" (a full sentence giving the REAL reason it failed, not a label). \
-BAD: "Complexity with internal nodes." \
-GOOD: "Recursing top-down recomputed each subtree for every ancestor, making it \
-O(n^2); the fix is to compute bottom-up once." \
-Include every distinct approach mentioned.
+"why_it_failed" (a full sentence giving the REAL reason it failed, drawn from \
+THIS transcript, not a vague label). State the actual mechanism of failure the \
+session encountered. Include every distinct approach mentioned.
 
 dead_ends: list of objects, each with "position" (float 0 to 1 indicating \
 where in the session it occurred) and "what_happened". Every failed approach \
@@ -81,19 +79,15 @@ If the session was smooth with no failures, produce an empty list.
 
 breakthroughs: list of objects with "position" and "what_worked".
 
-gotchas: list of strings. Each gotcha is a NON-OBVIOUS trap from this specific \
+gotchas: list of strings. Each gotcha is a NON-OBVIOUS trap from THIS specific \
 problem that a capable engineer would still get wrong without being warned. \
 A good gotcha is useful even to an expert: it names the symptom, the cause, and \
-what to do. Write each as a full, self-contained sentence. \
-BAD (useless, too terse): "Dependency ordering not clear." \
-BAD: "State space too large." \
-GOOD: "Processing leaf nodes first looks natural but breaks because a parent's \
-value depends on all children being finalized first; process in reverse-BFS \
-(deepest first) instead." \
-GOOD: "The naive state includes every node's color, which explodes; collapse it \
-to (subtree_root, count_of_uncolored) since only the count matters." \
-If a pitfall cannot be stated with its cause and fix, it is probably not worth \
-including. Prefer 2 deep gotchas over 6 shallow labels.
+what to do, in one self-contained sentence drawn ONLY from this transcript. \
+Do not write vague labels like "state space too large" or "ordering unclear" — \
+state WHY it is too large and WHAT to do about it, using the specifics this \
+session actually encountered. If a pitfall cannot be stated with its cause and \
+fix from what was said, leave it out. Prefer 2 deep, specific gotchas over 6 \
+shallow labels. Never invent details that were not in the transcript.
 
 sentiment_arc: object with "start" and "end", each exactly one word.
   start must be one of: confused, focused, frustrated, curious.

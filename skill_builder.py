@@ -179,6 +179,20 @@ def _is_terse(text: str) -> bool:
     return not any(sig in t.lower() for sig in signals)
 
 
+
+# Phrases from illustrative examples that must never appear in real output —
+# if they do, the model leaked the example instead of expanding the real gotcha.
+_LEAK_MARKERS = (
+    "reverse-bfs", "count_of_uncolored", "subtree_root", "leaf nodes first",
+    "number_of_uncolored_children", "process deepest-first",
+)
+
+
+def _looks_leaked(text: str) -> bool:
+    t = str(text).lower()
+    return any(marker in t for marker in _LEAK_MARKERS)
+
+
 def enrich_gotchas(extraction: dict, complete=None) -> dict:
     """Optionally expand terse gotchas into symptom/cause/fix form via one model
     call. `complete` is a function (prompt:str) -> str. If None, or if no terse
@@ -204,13 +218,20 @@ def enrich_gotchas(extraction: dict, complete=None) -> dict:
 
     prompt = (
         "You are sharpening the gotchas in a coding skill file so they give a "
-        "capable engineer real, non-obvious help. Context (problem area: "
-        f"{themes}):\n{ctx}\n\n"
-        "Rewrite each of the following terse gotchas into ONE self-contained "
-        "sentence that names the symptom, the cause, and what to do instead. If a "
-        "gotcha is too vague to rescue, return it unchanged. Keep them concrete and "
-        "specific to this problem area. Return ONLY a JSON array of strings, same "
-        "length and order as the input.\n\nInput gotchas:\n"
+        "capable engineer real, non-obvious help.\n\n"
+        f"PROBLEM AREA: {themes}\n"
+        f"WHAT WAS TRIED AND FAILED:\n{ctx}\n\n"
+        "Your job: rewrite each terse gotcha below into ONE self-contained "
+        "sentence that names the symptom, the cause, and what to do instead. "
+        "CRITICAL RULES:\n"
+        "- Each rewritten gotcha MUST be specific to the problem area above "
+        f"({themes}). Do NOT invent details from other domains.\n"
+        "- Base the rewrite ONLY on the terse gotcha's own meaning plus the "
+        "problem area. If you cannot rescue it without inventing facts, return it "
+        "UNCHANGED.\n"
+        "- Return ONLY a JSON array of strings, same length and order as the "
+        "input. No prose, no code fences.\n\n"
+        "Terse gotchas to rewrite:\n"
         + "\n".join(f"- {g}" for g in terse)
     )
 
@@ -223,8 +244,16 @@ def enrich_gotchas(extraction: dict, complete=None) -> dict:
         raw = _re.sub(r"^```(?:json)?|```$", "", raw, flags=_re.MULTILINE).strip()
         expanded = json.loads(raw)
         if isinstance(expanded, list) and len(expanded) == len(terse):
-            # map terse -> expanded
-            mapping = dict(zip(terse, [str(e).strip() for e in expanded]))
+            # map terse -> expanded, but REJECT any expansion that leaked the
+            # example phrasing (keep the original terse gotcha in that case).
+            cleaned = []
+            for original, exp in zip(terse, expanded):
+                exp = str(exp).strip()
+                if exp and not _looks_leaked(exp):
+                    cleaned.append((original, exp))
+                else:
+                    cleaned.append((original, original))
+            mapping = dict(cleaned)
             extraction = dict(extraction)
             extraction["gotchas"] = [mapping.get(g, g) for g in gotchas]
     except Exception:

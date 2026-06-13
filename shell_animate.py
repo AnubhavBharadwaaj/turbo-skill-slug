@@ -140,7 +140,7 @@ REPLAY_HTML = """
     var svg = document.querySelector('svg');
     if(!svg) return;
     try { svg.setCurrentTime(0); } catch(e){}
-    var anims = svg.querySelectorAll('animate, animateTransform, animateMotion');
+    var anims = svg.querySelectorAll('animate, animateTransform, animateMotion, set');
     anims.forEach(function(a){ try { a.beginElement(); } catch(e){} });
   }
   var btn = document.getElementById('replay-birth');

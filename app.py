@@ -17,7 +17,8 @@ import httpx
 from extract import extract_session
 from receipt import generate_receipt_svg
 from shell import generate_shell_svg
-from shell_animate import animate_shell_svg, wrap_in_iframe
+from shell_animate import wrap_in_iframe
+from shell_unroll import build_unroll_doc, N_STAGES
 from transcribe import transcribe_audio
 from trace_parser import parse_trace_to_transcript, detect_trace_format
 
@@ -111,14 +112,21 @@ def _finalize_outputs(transcript_display: str, extraction: dict, slug_audio_path
     Shared by the audio and trace paths so both render identically.
     """
     raw_json = json.dumps(extraction, indent=2)
+    # The full static shell is what we save for download (clean, portable).
     shell_svg = generate_shell_svg(extraction, growth=1.0)
-    # Wrap the finished shell with a browser-played birth animation
-    # (shards / draw / glass, chosen randomly per shell). The download
-    # file stays the clean static SVG; only the inline display animates.
-    anim_seed = hash(str(extraction.get("duration_minutes", 0))) % 10000
-    shell_animated = animate_shell_svg(shell_svg, seed=anim_seed)
-    # Wrap in an iframe srcdoc so Gradio cannot strip the SMIL animation.
-    shell_display = wrap_in_iframe(shell_animated, height=660)
+    # For the live display, build the scroll-unroll: a flipbook of growth stages
+    # (each truncates the spiral ALONG its arm) led by a 3D paper curl riding the
+    # tip. This lays the parchment down along the spiral path, not radially.
+    try:
+        stages = [
+            generate_shell_svg(extraction, growth=(i + 1) / N_STAGES)
+            for i in range(N_STAGES)
+        ]
+        unroll_doc = build_unroll_doc(stages)
+        shell_display = wrap_in_iframe(unroll_doc, height=660)
+    except Exception:
+        # Never let the animation break the result: fall back to the static shell.
+        shell_display = wrap_in_iframe(shell_svg, height=660)
     receipt_svg = generate_receipt_svg(extraction)
 
     tmp_dir = Path(tempfile.mkdtemp(prefix="slug_"))
