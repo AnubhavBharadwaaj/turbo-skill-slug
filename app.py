@@ -232,9 +232,9 @@ def build_interface() -> gr.Blocks:
         gr.Markdown(
             "# 🐌 TurboSkillSlug\n\n"
             "*A small, slow companion who watches you build.*\n\n"
-            "Upload a recording of your build session. The slug will sit "
-            "quietly through it, then give you a gentle recap, a clean "
-            "SKILL.md, and a hand-grown shell."
+            "Give the slug a build session: narrate it aloud, or drop an agent "
+            "session trace. It watches, then grows you a shell, a recap, a "
+            "SKILL.md, and a receipt."
         )
 
         with gr.Row():
@@ -255,7 +255,6 @@ def build_interface() -> gr.Blocks:
                             "🐌 give it to the slug", variant="primary",
                             interactive=False,
                         )
-                        status_line = gr.Markdown("")
                     with gr.Tab("drop a session trace"):
                         gr.Markdown(
                             "Drag a **Claude Code** "
@@ -276,76 +275,93 @@ def build_interface() -> gr.Blocks:
                         trace_button = gr.Button(
                             "🐌 let the slug read it", variant="primary",
                         )
-            with gr.Column(scale=2):
-                recap_output = gr.Markdown(label="slug recap")
-                slug_audio = gr.Audio(label="the slug speaks", type="filepath")
-                shell_output = gr.HTML(label="your shell")
-                receipt_output = gr.HTML(label="your receipt")
+            with gr.Column(scale=1):
+                status_line = gr.Markdown("")
 
-        transcript_output = gr.Markdown(label="transcript")
-        raw_json_output = gr.Code(label="Raw JSON", language="json")
+        # ---- THE SHELL, front and center, right under the inputs ----
+        # This is what plays during generation. Everything else stays hidden
+        # until the shell has finished being born.
+        shell_output = gr.HTML(label="your shell")
 
-        with gr.Row():
-            svg_download = gr.File(label="shell.svg")
-            receipt_download = gr.File(label="receipt.svg")
-            skill_download = gr.File(label="skill.md")
-            recap_download = gr.File(label="slug_recap.txt")
+        # ---- EVERYTHING ELSE, hidden until the shell finishes ----
+        with gr.Group(visible=False) as gifts_group:
+            gr.Markdown("### the slug's other gifts")
+            recap_output = gr.Markdown(label="slug recap")
+            slug_audio = gr.Audio(label="the slug speaks", type="filepath")
+            receipt_output = gr.HTML(label="your receipt")
+            transcript_output = gr.Markdown(label="transcript")
+            raw_json_output = gr.Code(label="Raw JSON", language="json")
+            with gr.Row():
+                svg_download = gr.File(label="shell.svg")
+                receipt_download = gr.File(label="receipt.svg")
+                skill_download = gr.File(label="skill.md")
+                recap_download = gr.File(label="slug_recap.txt")
 
-        # Enable the button + show readiness only once audio is actually present
+        # Enable the button only once audio is actually present
         audio_input.change(
             fn=on_audio_change,
             inputs=audio_input,
             outputs=[submit_button, status_line],
         )
 
-        # On click: immediately show a working state, then run the pipeline
-        submit_button.click(
-            fn=lambda: (
+        # The 10 pipeline outputs (shell + the 9 inside the gifts group)
+        pipeline_outputs = [
+            transcript_output,
+            recap_output,
+            shell_output,
+            receipt_output,
+            raw_json_output,
+            slug_audio,
+            svg_download,
+            receipt_download,
+            skill_download,
+            recap_download,
+        ]
+
+        def _hide_gifts():
+            # On start: hide the gifts, lock the button, set a watching status
+            return (
+                gr.update(visible=False),
                 gr.update(value="🐌 the slug is watching…", interactive=False),
-                gr.update(value="*The slug is listening. This takes a moment.*"),
-            ),
+                gr.update(value="*The slug is listening, then it will grow your shell...*"),
+            )
+
+        def _reveal_gifts():
+            # On finish: reveal the gifts, reset the button
+            return (
+                gr.update(visible=True),
+                gr.update(value="🐌 give it to the slug", interactive=True),
+                gr.update(value="*The slug has finished. Your gifts are below.*"),
+            )
+
+        # Audio path
+        submit_button.click(
+            fn=_hide_gifts,
             inputs=None,
-            outputs=[submit_button, status_line],
+            outputs=[gifts_group, submit_button, status_line],
         ).then(
             fn=process_audio,
             inputs=audio_input,
-            outputs=[
-                transcript_output,
-                recap_output,
-                shell_output,
-                receipt_output,
-                raw_json_output,
-                slug_audio,
-                svg_download,
-                receipt_download,
-                skill_download,
-                recap_download,
-            ],
+            outputs=pipeline_outputs,
         ).then(
-            fn=lambda: (
-                gr.update(value="🐌 give it to the slug", interactive=True),
-                gr.update(value="*The slug has finished. Scroll down for your gifts.*"),
-            ),
+            fn=_reveal_gifts,
             inputs=None,
-            outputs=[submit_button, status_line],
+            outputs=[gifts_group, submit_button, status_line],
         )
 
-        # Trace path: parse JSONL -> same pipeline, same outputs
+        # Trace path
         trace_button.click(
+            fn=_hide_gifts,
+            inputs=None,
+            outputs=[gifts_group, submit_button, status_line],
+        ).then(
             fn=process_trace,
             inputs=trace_input,
-            outputs=[
-                transcript_output,
-                recap_output,
-                shell_output,
-                receipt_output,
-                raw_json_output,
-                slug_audio,
-                svg_download,
-                receipt_download,
-                skill_download,
-                recap_download,
-            ],
+            outputs=pipeline_outputs,
+        ).then(
+            fn=_reveal_gifts,
+            inputs=None,
+            outputs=[gifts_group, submit_button, status_line],
         )
 
     return demo

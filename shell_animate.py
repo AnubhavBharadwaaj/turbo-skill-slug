@@ -1,24 +1,20 @@
 """
-Browser-rendered birth animations for the shell.
+Browser-rendered birth animations for the shell, using SMIL.
 
-The shell is generated once as a static SVG. This module injects a CSS
-animation that the BROWSER plays at 60fps, so the shell appears to come into
-being smoothly rather than in mechanical server-streamed frames.
+Gradio's gr.HTML sanitizes embedded <style> blocks, so CSS animation does not
+survive. SMIL animation elements (<animate>, <animateTransform>, <set>) are part
+of the SVG spec itself and render inside an <svg> even when CSS is stripped.
 
-Three styles, chosen randomly per shell (seeded by the session so it is
-deterministic per shell):
+The shell is generated once as a static SVG. This module injects SMIL animation
+into the tagged elements so the BROWSER plays a smooth one-shot birth, then
+holds the final (static) frame via fill="freeze".
 
-  1. "shards"   - knots and jewels scatter in from random directions, fly to
-                  position, and crystallize; the body fades up like cooling glass.
-  2. "draw"     - the spiral draws itself from the center outward (stroke
-                  dashoffset), and knots/jewels bloom in sequence as the line
-                  passes them.
-  3. "glass"    - the whole shell glows as translucent saturated stained glass,
-                  then solidifies into the nacre body.
+Three styles, chosen per shell:
+  "shards" - knots & jewels fly in from scattered offsets and crystallize
+  "draw"   - the spiral draws itself outward; knots/jewels bloom in sequence
+  "glass"  - the shell fades up from translucent saturated glass to solid nacre
 
-Usage:
-  from shell_animate import animate_shell_svg
-  animated = animate_shell_svg(static_svg, seed=hash(...) )
+All styles end on the exact static shell (freeze), so nothing is lost.
 """
 
 from __future__ import annotations
@@ -26,152 +22,166 @@ from __future__ import annotations
 import random
 import re
 
-
 STYLES = ("shards", "draw", "glass")
 
 
 def pick_style(seed) -> str:
-    rng = random.Random(seed)
-    return rng.choice(STYLES)
+    return random.Random(seed).choice(STYLES)
 
 
-# --- per-style CSS -------------------------------------------------------
-
-def _css_shards(rng: random.Random) -> str:
-    """Knots & jewels fly in from scattered offsets and crystallize."""
-    # Each knot/jewel gets a CSS var for its incoming offset, set inline below.
-    return """
-    @keyframes shell-body-cool {
-      0%   { opacity: 0; filter: saturate(2.2) brightness(1.5); }
-      60%  { opacity: 0.85; }
-      100% { opacity: 1; filter: none; }
-    }
-    @keyframes shard-fly {
-      0%   { opacity: 0; transform: translate(var(--dx,0px), var(--dy,0px)) scale(0.2) rotate(var(--dr,0deg)); }
-      70%  { opacity: 1; }
-      100% { opacity: 1; transform: translate(0,0) scale(1) rotate(0deg); }
-    }
-    @keyframes aperture-open {
-      0%, 60% { opacity: 0; transform: scale(0.3); }
-      100%    { opacity: 0.95; transform: scale(1); }
-    }
-    .shell-body { animation: shell-body-cool 1.6s ease-out both; }
-    .shell-knot, .shell-jewel {
-      transform-box: fill-box; transform-origin: center;
-      animation: shard-fly 1.4s cubic-bezier(.2,.8,.2,1) both;
-    }
-    .shell-jewel { animation-delay: .25s; }
-    .shell-aperture {
-      transform-box: fill-box; transform-origin: center;
-      animation: aperture-open 2.0s ease-out both;
-    }
-    """
-
-
-def _css_draw() -> str:
-    """Spiral draws itself; knots/jewels bloom as the line passes."""
-    return """
-    @keyframes draw-line {
-      0%   { stroke-dashoffset: var(--len, 4000); opacity: 0.5; }
-      100% { stroke-dashoffset: 0; opacity: 1; }
-    }
-    @keyframes body-fill {
-      0%   { opacity: 0; }
-      40%  { opacity: 0; }
-      100% { opacity: 1; }
-    }
-    @keyframes bloom {
-      0%   { opacity: 0; transform: scale(0); }
-      100% { opacity: 1; transform: scale(1); }
-    }
-    @keyframes aperture-open {
-      0%, 70% { opacity: 0; transform: scale(0.3); }
-      100%    { opacity: 0.95; transform: scale(1); }
-    }
-    .shell-body { animation: body-fill 1.8s ease-in both; }
-    .shell-centerline, .shell-rim {
-      stroke-dasharray: var(--len, 4000);
-      animation: draw-line 1.8s ease-out both;
-    }
-    .shell-knot, .shell-jewel {
-      transform-box: fill-box; transform-origin: center;
-      animation: bloom .7s ease-out both;
-    }
-    /* stagger blooms across the draw */
-    .shell-knot:nth-of-type(1){animation-delay:.5s}
-    .shell-knot:nth-of-type(2){animation-delay:.8s}
-    .shell-knot:nth-of-type(3){animation-delay:1.1s}
-    .shell-knot:nth-of-type(4){animation-delay:1.3s}
-    .shell-jewel:nth-of-type(odd){animation-delay:1.0s}
-    .shell-jewel:nth-of-type(even){animation-delay:1.3s}
-    .shell-aperture {
-      transform-box: fill-box; transform-origin: center;
-      animation: aperture-open 2.2s ease-out both;
-    }
-    """
-
-
-def _css_glass() -> str:
-    """Whole shell glows as translucent stained glass, then solidifies."""
-    return """
-    @keyframes glass-solidify {
-      0%   { opacity: 0; filter: saturate(2.6) brightness(1.6) blur(2px); }
-      45%  { opacity: 0.7; filter: saturate(2.0) brightness(1.3) blur(1px); }
-      100% { opacity: 1; filter: none; }
-    }
-    @keyframes glass-twinkle {
-      0%   { opacity: 0; }
-      50%  { opacity: 1; }
-      100% { opacity: 1; }
-    }
-    @keyframes aperture-open {
-      0%, 55% { opacity: 0; transform: scale(0.4); }
-      100%    { opacity: 0.95; transform: scale(1); }
-    }
-    .shell-body { animation: glass-solidify 2.0s ease-out both; }
-    .shell-knot { animation: glass-twinkle 1.6s ease-out both; animation-delay:.4s; }
-    .shell-jewel { animation: glass-twinkle 1.6s ease-out both; animation-delay:.7s; }
-    .shell-aperture {
-      transform-box: fill-box; transform-origin: center;
-      animation: aperture-open 2.2s ease-out both;
-    }
-    """
-
-
-def _inject_shard_offsets(svg: str, rng: random.Random) -> str:
-    """Give each knot/jewel a random incoming offset via inline style vars."""
-    def add_offset(m):
+def _animate_attr(el_match_re, svg, anim_xml):
+    """Insert anim_xml before the self-closing /> of each matching element,
+    converting <tag .../> into <tag ...>anim</tag>."""
+    def repl(m):
         tag = m.group(0)
-        dx = rng.uniform(-220, 220)
-        dy = rng.uniform(-220, 220)
-        dr = rng.uniform(-180, 180)
-        style = f'style="--dx:{dx:.0f}px;--dy:{dy:.0f}px;--dr:{dr:.0f}deg"'
-        # insert style before the closing />
-        return tag[:-2] + f' {style}/>'
-    svg = re.sub(r'<circle class="shell-knot"[^>]*/>', add_offset, svg)
-    svg = re.sub(r'<circle class="shell-jewel"[^>]*/>', add_offset, svg)
+        # turn '<circle .../>' into '<circle ...>{anim}</circle>'
+        inner = tag[:-2].rstrip()  # drop '/>'
+        tagname = re.match(r"<(\w+)", tag).group(1)
+        return f"{inner}>{anim_xml}</{tagname}>"
+    return re.sub(el_match_re, repl, svg)
+
+
+def _shards(svg: str, rng: random.Random) -> str:
+    # Body: fade up (cooling glass) via opacity animate
+    body_anim = (
+        '<animate attributeName="opacity" from="0" to="1" '
+        'dur="1.4s" begin="0s" fill="freeze"/>'
+    )
+    svg = _animate_attr(r'<path class="shell-body"[^>]*/>', svg, body_anim)
+
+    # Knots & jewels: fly in from a random offset + fade, via animateTransform
+    def fly(cls, delay):
+        def repl(m):
+            tag = m.group(0)
+            dx = rng.uniform(-200, 200)
+            dy = rng.uniform(-200, 200)
+            inner = tag[:-2].rstrip()
+            anim = (
+                f'<animateTransform attributeName="transform" type="translate" '
+                f'from="{dx:.0f} {dy:.0f}" to="0 0" dur="1.1s" begin="{delay}s" '
+                f'fill="freeze" calcMode="spline" keySplines="0.2 0.8 0.2 1" keyTimes="0;1"/>'
+                f'<animate attributeName="opacity" from="0" to="{0.9 if cls=="shell-knot" else 0.95}" '
+                f'dur="0.9s" begin="{delay}s" fill="freeze"/>'
+            )
+            return f"{inner}>{anim}</circle>"
+        return repl
+    svg = re.sub(r'<circle class="shell-knot"[^>]*/>', fly("shell-knot", 0.1), svg)
+    svg = re.sub(r'<circle class="shell-jewel"[^>]*/>', fly("shell-jewel", 0.35), svg)
+
+    # Aperture opens last
+    svg = _aperture_open(svg, begin=1.2)
     return svg
 
 
-def animate_shell_svg(svg: str, seed=0, style: str | None = None) -> str:
-    """Wrap a finished shell SVG with a browser-played birth animation.
+def _draw(svg: str) -> str:
+    # Centerline and rim: draw via stroke-dashoffset animation.
+    # SMIL can animate stroke-dashoffset; we set a large dasharray inline.
+    def draw_path(m):
+        tag = m.group(0)
+        inner = tag[:-2].rstrip()
+        # add dasharray, animate dashoffset from big->0
+        inner = inner.replace("<path", '<path stroke-dasharray="6000"', 1)
+        anim = (
+            '<animate attributeName="stroke-dashoffset" from="6000" to="0" '
+            'dur="1.8s" begin="0s" fill="freeze"/>'
+        )
+        return f"{inner}>{anim}</path>"
+    svg = re.sub(r'<path class="shell-centerline"[^>]*/>', draw_path, svg)
+    svg = re.sub(r'<path class="shell-rim"[^>]*/>', draw_path, svg)
 
-    Returns the SVG with an injected <style> block (and, for shards, per-element
-    offsets). The animation plays once on render; the final frame is the exact
-    static shell, so nothing is lost if animations are disabled.
+    # Body fades in behind the drawing line
+    body_anim = (
+        '<animate attributeName="opacity" from="0" to="1" '
+        'dur="1.8s" begin="0.3s" fill="freeze"/>'
+    )
+    svg = _animate_attr(r'<path class="shell-body"[^>]*/>', svg, body_anim)
+
+    # Knots/jewels bloom (scale 0->1) with staggered delays
+    def bloom(delay):
+        def repl(m):
+            tag = m.group(0)
+            inner = tag[:-2].rstrip()
+            anim = (
+                f'<animateTransform attributeName="transform" type="scale" '
+                f'from="0" to="1" dur="0.6s" begin="{delay}s" fill="freeze" '
+                f'additive="sum"/>'
+                f'<animate attributeName="opacity" from="0" to="0.95" '
+                f'dur="0.5s" begin="{delay}s" fill="freeze"/>'
+            )
+            return f"{inner}>{anim}</circle>"
+        return repl
+    # stagger by occurrence using incremental delays
+    svg = _stagger_bloom(svg, "shell-knot", base=0.6, step=0.3)
+    svg = _stagger_bloom(svg, "shell-jewel", base=1.0, step=0.2)
+
+    svg = _aperture_open(svg, begin=1.8)
+    return svg
+
+
+def _glass(svg: str) -> str:
+    # Body solidifies: opacity 0->1 (the saturate/blur part needs CSS filters,
+    # which Gradio strips, so we approximate the "glass" feel with a staged
+    # opacity + a brief over-bright flash via a second opacity pulse).
+    body_anim = (
+        '<animate attributeName="opacity" values="0;0.5;1" keyTimes="0;0.5;1" '
+        'dur="2.0s" begin="0s" fill="freeze"/>'
+    )
+    svg = _animate_attr(r'<path class="shell-body"[^>]*/>', svg, body_anim)
+
+    # Knots & jewels twinkle in
+    twinkle = (
+        '<animate attributeName="opacity" values="0;1" dur="1.4s" '
+        'begin="0.5s" fill="freeze"/>'
+    )
+    svg = _animate_attr(r'<circle class="shell-knot"[^>]*/>', svg, twinkle)
+    svg = _animate_attr(r'<circle class="shell-jewel"[^>]*/>', svg, twinkle)
+
+    svg = _aperture_open(svg, begin=1.4)
+    return svg
+
+
+def _stagger_bloom(svg, cls, base, step):
+    """Apply scale-bloom with incrementing delay to each element of class cls."""
+    pattern = re.compile(rf'<circle class="{cls}"[^>]*/>')
+    matches = list(pattern.finditer(svg))
+    # process in reverse so indices stay valid
+    for i in range(len(matches) - 1, -1, -1):
+        m = matches[i]
+        tag = m.group(0)
+        delay = base + i * step
+        inner = tag[:-2].rstrip()
+        anim = (
+            f'<animateTransform attributeName="transform" type="scale" '
+            f'from="0" to="1" dur="0.6s" begin="{delay:.2f}s" fill="freeze" additive="sum"/>'
+            f'<animate attributeName="opacity" from="0" to="0.95" '
+            f'dur="0.5s" begin="{delay:.2f}s" fill="freeze"/>'
+        )
+        new = f"{inner}>{anim}</circle>"
+        svg = svg[:m.start()] + new + svg[m.end():]
+    return svg
+
+
+def _aperture_open(svg: str, begin: float) -> str:
+    """The breakthrough mouth opens last: scale + fade, frozen open."""
+    def repl(m):
+        tag = m.group(0)
+        inner = tag[:-2].rstrip()
+        anim = (
+            f'<animate attributeName="opacity" from="0" to="0.95" '
+            f'dur="0.8s" begin="{begin}s" fill="freeze"/>'
+        )
+        return f"{inner}>{anim}</ellipse>"
+    return re.sub(r'<ellipse class="shell-aperture"[^>]*/>', repl, svg)
+
+
+def animate_shell_svg(svg: str, seed=0, style: str | None = None) -> str:
+    """Inject SMIL birth animation into a finished shell SVG. Survives Gradio
+    HTML sanitization (SMIL is part of SVG, not CSS). Ends on the static shell.
     """
     rng = random.Random(seed)
     chosen = style or rng.choice(STYLES)
-
     if chosen == "shards":
-        css = _css_shards(rng)
-        svg = _inject_shard_offsets(svg, rng)
-    elif chosen == "draw":
-        css = _css_draw()
-    else:
-        css = _css_glass()
-
-    style_block = f'<style>\n{css}\n</style>'
-    # Insert the style block right after the opening <svg ...> tag
-    insert_at = svg.find(">", svg.find("<svg")) + 1
-    return svg[:insert_at] + "\n" + style_block + svg[insert_at:]
+        return _shards(svg, rng)
+    if chosen == "draw":
+        return _draw(svg)
+    return _glass(svg)
