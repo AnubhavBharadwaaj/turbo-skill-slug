@@ -38,11 +38,14 @@ GOLD_PALE = "#efe0b0"
 
 
 def _gold_backing(x: float, y: float, r: float) -> str:
-    """A small gold-leaf disc behind a figure so dark ink reads against gold."""
+    """A gold-leaf disc behind a figure so dark ink reads against gold. A faint
+    dark ring keeps the figure legible even on gold-heavy (warm) shells where
+    the gold backing would otherwise blend into the body."""
     return (
-        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r:.1f}" fill="{GOLD}" opacity="0.55"/>'
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r + 1.5:.1f}" fill="{INK}" opacity="0.30"/>'
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r:.1f}" fill="{GOLD}" opacity="0.62"/>'
         f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r:.1f}" fill="none" '
-        f'stroke="{GOLD_BRIGHT}" stroke-width="0.8" opacity="0.6"/>'
+        f'stroke="{INK}" stroke-width="0.8" opacity="0.45"/>'
     )
 
 def _cloud_band(cx: float, cy: float, w: float, h: float, seed: int) -> str:
@@ -309,8 +312,9 @@ def build_battle_layer(features: dict, centerline: list, outer_pts: list,
             parts.append(_cloud_band(x, y, w=rng.uniform(120, 180),
                                      h=rng.uniform(30, 44), seed=seed + i))
 
-    # ---- the general (developer): in a mid-outer arm, large, on gold ----
-    p = _point_at_radius_frac(centerline, 0.55)
+    # ---- the general (developer): pushed to a clear mid-outer arm so it does
+    # not pile onto the figures near the crowded eye ----
+    p = _point_at_radius_frac(centerline, 0.66)
     if p:
         gx, gy = p[0], p[1]
         parts.append(_gold_backing(gx, gy - 10, 30))
@@ -322,7 +326,7 @@ def build_battle_layer(features: dict, centerline: list, outer_pts: list,
     # two-thirds of the shell so they land on visible arms.
     for de in dead_ends:
         pos = max(0.0, min(1.0, float(de.get("position", 0.5))))
-        rfrac = 0.40 + pos * 0.52  # 0.40 .. 0.92
+        rfrac = 0.48 + pos * 0.46  # 0.48 .. 0.94 (keep out of the crowded eye)
         p = _point_at_radius_frac(centerline, rfrac)
         if not p:
             continue
@@ -336,7 +340,7 @@ def build_battle_layer(features: dict, centerline: list, outer_pts: list,
     # here because outer_pts already traces the visible outer edge) ----
     n_arch = min(len(gotchas), 8)
     for i in range(n_arch):
-        frac = 0.45 + (i / max(1, n_arch)) * 0.50
+        frac = 0.52 + (i / max(1, n_arch)) * 0.44
         idx = int(frac * (len(outer_pts) - 1)) if outer_pts else 0
         if idx >= len(outer_pts):
             continue

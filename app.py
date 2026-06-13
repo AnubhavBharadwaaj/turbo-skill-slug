@@ -17,7 +17,7 @@ import httpx
 from extract import extract_session
 from receipt import generate_receipt_svg
 from shell import generate_shell_svg
-from shell_animate import animate_shell_svg
+from shell_animate import animate_shell_svg, wrap_in_iframe
 from transcribe import transcribe_audio
 from trace_parser import parse_trace_to_transcript, detect_trace_format
 
@@ -116,7 +116,9 @@ def _finalize_outputs(transcript_display: str, extraction: dict, slug_audio_path
     # (shards / draw / glass, chosen randomly per shell). The download
     # file stays the clean static SVG; only the inline display animates.
     anim_seed = hash(str(extraction.get("duration_minutes", 0))) % 10000
-    shell_display = animate_shell_svg(shell_svg, seed=anim_seed)
+    shell_animated = animate_shell_svg(shell_svg, seed=anim_seed)
+    # Wrap in an iframe srcdoc so Gradio cannot strip the SMIL animation.
+    shell_display = wrap_in_iframe(shell_animated, height=660)
     receipt_svg = generate_receipt_svg(extraction)
 
     tmp_dir = Path(tempfile.mkdtemp(prefix="slug_"))

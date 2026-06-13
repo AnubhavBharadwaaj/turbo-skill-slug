@@ -185,3 +185,27 @@ def animate_shell_svg(svg: str, seed=0, style: str | None = None) -> str:
     if chosen == "draw":
         return _draw(svg)
     return _glass(svg)
+
+
+def wrap_in_iframe(animated_svg: str, height: int = 660) -> str:
+    """Wrap an animated SVG in an <iframe srcdoc> so Gradio's HTML sanitizer
+    cannot strip the SMIL animation. The iframe is an isolated document; its
+    srcdoc contents render verbatim, animation intact.
+
+    Gradio's gr.HTML sanitizes top-level <svg>/<animate>, but it does NOT parse
+    into iframe srcdoc, so the animation survives.
+    """
+    import html as _html
+    # The SVG becomes a full tiny HTML document inside the iframe
+    doc = (
+        "<!DOCTYPE html><html><head><style>"
+        "html,body{margin:0;padding:0;background:transparent;overflow:hidden}"
+        "svg{width:100%;height:auto;display:block}"
+        "</style></head><body>" + animated_svg + "</body></html>"
+    )
+    escaped = _html.escape(doc, quote=True)
+    return (
+        f'<iframe srcdoc="{escaped}" '
+        f'style="width:100%;height:{height}px;border:none;background:transparent;" '
+        f'sandbox="allow-scripts"></iframe>'
+    )
