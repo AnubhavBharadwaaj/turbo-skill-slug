@@ -13,6 +13,14 @@ Visual techniques:
   - HSL-derived color harmonies from sentiment
   - Cubic bezier smoothing on the spiral body
   - Layered transparency for organic depth
+
+Staged growth:
+  generate_shell_svg(features, growth=g) renders the shell at completion
+  fraction g in [0,1]. At g<1 the spiral is physically shorter, only the
+  knots and jewels up to that point have formed, and the aperture (the
+  breakthrough mouth) stays closed until g reaches 1.0 - the breakthrough
+  is the last thing to open. growth=1.0 is byte-identical in intent to the
+  original single-shot render.
 """
 
 import colorsys
@@ -89,7 +97,6 @@ def _smooth_path(pts: list, closed: bool = False) -> str:
     """Convert points to a smooth SVG path using cubic bezier approximation."""
     if len(pts) < 2:
         return ""
-    # Use catmull-rom to cubic bezier conversion for smoothness
     d = [f"M {pts[0][0]:.1f} {pts[0][1]:.1f}"]
     tension = 0.3
     for i in range(1, len(pts)):
@@ -110,7 +117,6 @@ def _smooth_path(pts: list, closed: bool = False) -> str:
 def _band_path_smooth(inner: list, outer: list) -> str:
     """Closed smooth path for the shell body (outer forward, inner reverse)."""
     fwd = _smooth_path(outer)
-    # Reverse inner for closing
     rev_pts = list(reversed(inner))
     if rev_pts:
         rev = f"L {rev_pts[0][0]:.1f} {rev_pts[0][1]:.1f} "
@@ -133,8 +139,15 @@ def _band_path_smooth(inner: list, outer: list) -> str:
 # Main generator
 # ---------------------------------------------------------------------------
 
-def generate_shell_svg(features: dict[str, Any]) -> str:
-    """Generate a beautiful SVG shell from session features."""
+def generate_shell_svg(features: dict[str, Any], growth: float = 1.0) -> str:
+    """Generate a beautiful SVG shell from session features.
+
+    growth in [0,1] controls how far the shell has formed. At growth<1 the
+    spiral is truncated, only knots/jewels up to that fraction appear, and the
+    aperture stays closed until growth==1.0. growth>=1.0 is the full shell.
+    """
+    growth = max(0.0, min(1.0, float(growth)))
+
     duration = max(5, min(180, int(features.get("duration_minutes", 30) or 30)))
     approaches = features.get("approaches_tried", []) or []
     dead_ends = features.get("dead_ends", []) or []
@@ -147,29 +160,35 @@ def generate_shell_svg(features: dict[str, Any]) -> str:
     end_sent = sentiment.get("end", "resolved")
     pal = _palette(start_sent, end_sent)
 
-    # Use session as random seed for consistent particle placement
     seed = hash(str(features.get("duration_minutes", 0))) % 10000
     rng = random.Random(seed)
 
     W = H = 640
     cx, cy = W / 2, H / 2 + 15
 
-    # Spiral shape from session
     n_turns = 2.4 + 0.35 * len(approaches) + duration / 150.0
     n_turns = min(n_turns, 4.5)
     r0 = 5
     r_max = min(W * 0.38, 65 + duration * 2.0)
 
-    centerline = _log_spiral(cx, cy, n_turns, r0, r_max, n_points=500)
+    # Always compute the FULL spiral (geometry is stable); growth truncates
+    # how much of it we draw, so the partial shell is a true prefix of the
+    # final one (no reflow, no jitter between stages).
+    full_centerline = _log_spiral(cx, cy, n_turns, r0, r_max, n_points=500)
+    n_full = len(full_centerline)
+    n_grown = max(2, int(round(n_full * growth)))
+    centerline = full_centerline[:n_grown]
 
-    def thickness_at(idx: int, total: int) -> float:
-        frac = idx / max(1, total - 1)
+    def thickness_at(idx: int, total_full: int) -> float:
+        # thickness keyed to position in the FULL spiral, so a point's
+        # thickness is identical whether or not later points exist yet
+        frac = idx / max(1, total_full - 1)
         return 3 + (r_max * 0.28) * (frac ** 1.35)
 
     outer_pts = []
     inner_pts = []
     for i, (x, y, t, r, n) in enumerate(centerline):
-        th = thickness_at(i, len(centerline))
+        th = thickness_at(i, n_full)
         outer_pts.append((x + math.cos(n) * th, y + math.sin(n) * th, t, r, n))
         inner_pts.append((x - math.cos(n) * th, y - math.sin(n) * th, t, r, n))
 
@@ -244,7 +263,6 @@ def generate_shell_svg(features: dict[str, Any]) -> str:
     svg.append(f'<rect width="{W}" height="{H}" fill="{pal["bg_deep"]}"/>')
     svg.append(f'<rect width="{W}" height="{H}" fill="url(#atmosphere)"/>')
 
-    # Scattered particles (subtle stars / dust)
     for _ in range(40):
         px = rng.uniform(20, W - 20)
         py = rng.uniform(20, H - 20)
@@ -255,7 +273,6 @@ def generate_shell_svg(features: dict[str, Any]) -> str:
             f'fill="{pal["highlight"]}" opacity="{po:.2f}"/>'
         )
 
-    # Outer atmospheric halo
     svg.append(
         f'<circle cx="{cx}" cy="{cy}" r="{r_max + 90}" '
         f'fill="{pal["body_dark"]}" opacity="0.08"/>'
@@ -267,34 +284,32 @@ def generate_shell_svg(features: dict[str, Any]) -> str:
 
     # ---- SHELL BODY with nacre texture ----
     body_d = _band_path_smooth(inner_pts, outer_pts)
-    # Shadow layer (offset, blurred)
     svg.append(
         f'<path d="{body_d}" fill="{pal["bg_deep"]}" opacity="0.4" '
         f'transform="translate(3, 4)" filter="url(#depth)"/>'
     )
-    # Main body with nacre
     svg.append(
         f'<path d="{body_d}" fill="url(#bodyGrad)" '
         f'stroke="{pal["septa"]}" stroke-width="0.5" filter="url(#nacre)"/>'
     )
 
-    # ---- SEPTA (chamber ridges, organic opacity variation) ----
+    # ---- SEPTA (chamber ridges) ----
     septa_step = 14 if "debug" in themes else (18 if "build" in themes else 16)
-    total_septa = (len(centerline) - 8 - septa_step) // septa_step
-    for si, i in enumerate(range(septa_step, len(centerline) - 8, septa_step)):
-        ix, iy = inner_pts[i][0], inner_pts[i][1]
-        ox, oy = outer_pts[i][0], outer_pts[i][1]
-        # Opacity grows along the spiral (faint at center, fuller at edge)
-        frac = si / max(1, total_septa)
-        opacity = 0.15 + frac * 0.35
-        svg.append(
-            f'<line x1="{ix:.1f}" y1="{iy:.1f}" '
-            f'x2="{ox:.1f}" y2="{oy:.1f}" '
-            f'stroke="{pal["septa"]}" stroke-width="0.7" '
-            f'opacity="{opacity:.2f}" stroke-linecap="round"/>'
-        )
+    if len(centerline) > septa_step + 8:
+        total_septa = (len(centerline) - 8 - septa_step) // septa_step
+        for si, i in enumerate(range(septa_step, len(centerline) - 8, septa_step)):
+            ix, iy = inner_pts[i][0], inner_pts[i][1]
+            ox, oy = outer_pts[i][0], outer_pts[i][1]
+            frac = si / max(1, total_septa)
+            opacity = 0.15 + frac * 0.35
+            svg.append(
+                f'<line x1="{ix:.1f}" y1="{iy:.1f}" '
+                f'x2="{ox:.1f}" y2="{oy:.1f}" '
+                f'stroke="{pal["septa"]}" stroke-width="0.7" '
+                f'opacity="{opacity:.2f}" stroke-linecap="round"/>'
+            )
 
-    # ---- LONGITUDINAL BANDS (iridescence stripes) ----
+    # ---- LONGITUDINAL BANDS ----
     for frac, opacity in [(0.2, 0.2), (0.4, 0.3), (0.6, 0.25), (0.8, 0.2)]:
         band = []
         for (ox, oy, *_), (ix, iy, *_) in zip(outer_pts, inner_pts):
@@ -315,7 +330,7 @@ def generate_shell_svg(features: dict[str, Any]) -> str:
         f'stroke="{pal["highlight"]}" stroke-width="0.5" opacity="0.4"/>'
     )
 
-    # ---- OUTER RIM GLOW (LED underglow effect) ----
+    # ---- OUTER RIM GLOW ----
     rim_path = _smooth_path(outer_pts)
     svg.append(
         f'<path d="{rim_path}" fill="none" '
@@ -327,7 +342,7 @@ def generate_shell_svg(features: dict[str, Any]) -> str:
         f'stroke="{pal["highlight"]}" stroke-width="0.8" opacity="0.5"/>'
     )
 
-    # ---- CENTRAL EYE (origin point of the shell) ----
+    # ---- CENTRAL EYE ----
     ex, ey = centerline[0][0], centerline[0][1]
     svg.append(
         f'<circle cx="{ex:.1f}" cy="{ey:.1f}" r="4" '
@@ -342,167 +357,123 @@ def generate_shell_svg(features: dict[str, Any]) -> str:
         f'fill="#fff" opacity="0.9"/>'
     )
 
-    # ---- DEAD-END KNOTS ----
+    # ---- DEAD-END KNOTS (only those that have formed by this growth) ----
     for de in dead_ends:
         pos = max(0.04, min(0.96, float(de.get("position", 0.5))))
-        idx = int(pos * (len(centerline) - 1))
+        if pos > growth:
+            continue  # not yet formed at this stage
+        idx = int(pos * (n_full - 1))
+        if idx >= len(centerline):
+            continue
         x, y, _, r, _ = centerline[idx]
-        th = thickness_at(idx, len(centerline))
+        th = thickness_at(idx, n_full)
         kr = max(3.5, th * 0.32)
-        # Outer shadow ring
         svg.append(
             f'<circle cx="{x + 1:.1f}" cy="{y + 1:.1f}" r="{kr + 1:.1f}" '
             f'fill="{pal["bg_deep"]}" opacity="0.5" filter="url(#depth)"/>'
         )
-        # Knot body
         svg.append(
             f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{kr:.1f}" '
             f'fill="{pal["knot"]}" stroke="{pal["body_dark"]}" '
             f'stroke-width="1" opacity="0.9"/>'
         )
-        # Inner highlight
         svg.append(
             f'<circle cx="{x - 1:.1f}" cy="{y - 1.2:.1f}" r="{kr * 0.3:.1f}" '
             f'fill="{pal["body_dark"]}" opacity="0.6"/>'
         )
 
-    # ---- GOTCHA JEWELS along the outer rim ----
+    # ---- GOTCHA JEWELS (those whose rim position has formed) ----
     n_jewels = min(len(gotchas), 12)
     for i in range(n_jewels):
         frac = 0.28 + (i / max(1, n_jewels)) * 0.65
-        idx = int(frac * (len(outer_pts) - 1))
+        if frac > growth:
+            continue  # rim hasn't reached this jewel yet
+        idx = int(frac * (len(outer_pts) - 1)) if outer_pts else 0
+        if idx >= len(outer_pts):
+            continue
         ox, oy, _, _, n = outer_pts[idx]
         jx = ox + math.cos(n) * 4
         jy = oy + math.sin(n) * 4
-        # Glow halo (larger, brighter)
         svg.append(
             f'<circle cx="{jx:.1f}" cy="{jy:.1f}" r="9" '
             f'fill="{pal["jewel"]}" opacity="0.3" filter="url(#jewelGlow)"/>'
         )
-        # Jewel body (larger)
         svg.append(
             f'<circle cx="{jx:.1f}" cy="{jy:.1f}" r="4.5" '
             f'fill="url(#jewelGrad)" opacity="0.95"/>'
         )
-        # Tiny highlight dot (refraction)
         svg.append(
             f'<circle cx="{jx - 1:.1f}" cy="{jy - 1.2:.1f}" r="1.2" '
             f'fill="#fff" opacity="0.9"/>'
         )
 
-    # ---- APERTURE (breakthrough mouth) at the spiral tip ----
-    bidx = len(centerline) - 1
-    bx, by, _, br, bn = centerline[bidx]
-    bth = thickness_at(bidx, len(centerline))
-    # Outer glow
-    svg.append(
-        f'<ellipse cx="{bx:.1f}" cy="{by:.1f}" '
-        f'rx="{bth * 2.0:.1f}" ry="{bth * 1.5:.1f}" '
-        f'transform="rotate({math.degrees(bn):.0f} {bx:.1f} {by:.1f})" '
-        f'fill="{pal["accent"]}" opacity="0.15" filter="url(#glow)"/>'
-    )
-    # Aperture body
-    svg.append(
-        f'<ellipse cx="{bx:.1f}" cy="{by:.1f}" '
-        f'rx="{bth * 1.2:.1f}" ry="{bth * 0.9:.1f}" '
-        f'transform="rotate({math.degrees(bn):.0f} {bx:.1f} {by:.1f})" '
-        f'fill="url(#apertureGrad)" opacity="0.95"/>'
-    )
-    # Bright core
-    svg.append(
-        f'<ellipse cx="{bx:.1f}" cy="{by:.1f}" '
-        f'rx="{bth * 0.4:.1f}" ry="{bth * 0.28:.1f}" '
-        f'transform="rotate({math.degrees(bn):.0f} {bx:.1f} {by:.1f})" '
-        f'fill="{pal["aperture_core"]}" opacity="0.9"/>'
-    )
+    # ---- APERTURE (breakthrough mouth) - opens only when fully grown ----
+    # The breakthrough is the LAST thing to form. It opens as growth nears 1.0,
+    # fading in over the final 15% so the reveal lands on the breakthrough.
+    if growth > 0.85:
+        aperture_op = min(1.0, (growth - 0.85) / 0.15)
+        bidx = len(centerline) - 1
+        bx, by, _, br, bn = centerline[bidx]
+        bth = thickness_at(bidx, n_full)
+        svg.append(
+            f'<ellipse cx="{bx:.1f}" cy="{by:.1f}" '
+            f'rx="{bth * 2.0:.1f}" ry="{bth * 1.5:.1f}" '
+            f'transform="rotate({math.degrees(bn):.0f} {bx:.1f} {by:.1f})" '
+            f'fill="{pal["accent"]}" opacity="{0.15 * aperture_op:.2f}" filter="url(#glow)"/>'
+        )
+        svg.append(
+            f'<ellipse cx="{bx:.1f}" cy="{by:.1f}" '
+            f'rx="{bth * 1.2:.1f}" ry="{bth * 0.9:.1f}" '
+            f'transform="rotate({math.degrees(bn):.0f} {bx:.1f} {by:.1f})" '
+            f'fill="url(#apertureGrad)" opacity="{0.95 * aperture_op:.2f}"/>'
+        )
+        svg.append(
+            f'<ellipse cx="{bx:.1f}" cy="{by:.1f}" '
+            f'rx="{bth * 0.4:.1f}" ry="{bth * 0.28:.1f}" '
+            f'transform="rotate({math.degrees(bn):.0f} {bx:.1f} {by:.1f})" '
+            f'fill="{pal["aperture_core"]}" opacity="{0.9 * aperture_op:.2f}"/>'
+        )
 
-    # ---- SIGNATURE ----
-    stats = (
-        f"turboskillslug · {duration}m · {len(approaches)} tried · "
-        f"{len(dead_ends)} stumbles · {len(gotchas)} jewels"
-    )
-    svg.append(
-        f'<text x="{W - 14}" y="{H - 14}" text-anchor="end" '
-        f'fill="{pal["body_light"]}" font-size="9" opacity="0.5" '
-        f'font-family="Georgia, serif" font-style="italic">{stats}</text>'
-    )
+    # ---- SIGNATURE (full shell only) ----
+    if growth >= 1.0:
+        stats = (
+            f"turboskillslug · {duration}m · {len(approaches)} tried · "
+            f"{len(dead_ends)} stumbles · {len(gotchas)} jewels"
+        )
+        svg.append(
+            f'<text x="{W - 14}" y="{H - 14}" text-anchor="end" '
+            f'fill="{pal["body_light"]}" font-size="9" opacity="0.5" '
+            f'font-family="Georgia, serif" font-style="italic">{stats}</text>'
+        )
 
     svg.append("</svg>")
     return "\n".join(svg)
 
 
 # ---------------------------------------------------------------------------
-# Smoke test with sample data
+# Smoke test
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     from pathlib import Path
 
-    samples = {
-        "frustrated_debug": {
-            "duration_minutes": 47,
-            "themes": ["debug", "build"],
-            "approaches_tried": [
-                {"approach": "naive regex", "why_it_failed": "too brittle"},
-                {"approach": "ast parser", "why_it_failed": "complex setup"},
-            ],
-            "dead_ends": [
-                {"position": 0.15, "what_happened": "regex backtracked"},
-                {"position": 0.42, "what_happened": "missing edge case"},
-                {"position": 0.61, "what_happened": "wrong import"},
-            ],
-            "breakthroughs": [{"position": 0.88, "what_worked": "ast walk"}],
-            "gotchas": ["null nodes", "tabs vs spaces", "comments",
-                        "windows line endings", "unicode"],
-            "sentiment_arc": {"start": "frustrated", "end": "resolved"},
-        },
-        "curious_explore": {
-            "duration_minutes": 22,
-            "themes": ["explore"],
-            "approaches_tried": [
-                {"approach": "skim docs", "why_it_failed": "incomplete"}],
-            "dead_ends": [],
-            "breakthroughs": [{"position": 0.92, "what_worked": "aha moment"}],
-            "gotchas": ["api changed in v3"],
-            "sentiment_arc": {"start": "curious", "end": "enlightened"},
-        },
-        "long_grind": {
-            "duration_minutes": 120,
-            "themes": ["build", "debug"],
-            "approaches_tried": [
-                {"approach": f"attempt {i}", "why_it_failed": "nope"}
-                for i in range(5)
-            ],
-            "dead_ends": [
-                {"position": p / 10, "what_happened": "hit wall"}
-                for p in [1, 2, 3, 4, 5, 6, 7, 8]
-            ],
-            "breakthroughs": [{"position": 0.95, "what_worked": "eureka"}],
-            "gotchas": [f"gotcha {i}" for i in range(10)],
-            "sentiment_arc": {"start": "focused", "end": "exhausted"},
-        },
-        "focused_resolved": {
-            "duration_minutes": 60,
-            "themes": ["distillation", "quantization", "pruning", "implementation"],
-            "approaches_tried": [
-                {"approach": "Summarizing the paper", "why_it_failed": "too generic"},
-                {"approach": "Creating a reference doc", "why_it_failed": "too manual"},
-                {"approach": "Generating summaries per concept", "why_it_failed": "verbose"},
-            ],
-            "dead_ends": [
-                {"position": 0.25, "what_happened": "summary was too generic"},
-                {"position": 0.5, "what_happened": "reference doc too complex"},
-            ],
-            "breakthroughs": [{"position": 0.75, "what_worked": "structured format with defined terms"}],
-            "gotchas": [
-                "R tilde won't match R due to rounding",
-                "Quantization needs careful gradient handling",
-                "Integer-only is faster than simulated",
-            ],
-            "sentiment_arc": {"start": "focused", "end": "resolved"},
-        },
+    sample = {
+        "duration_minutes": 47,
+        "themes": ["debug", "build"],
+        "approaches_tried": [
+            {"approach": "naive regex", "why_it_failed": "too brittle"},
+            {"approach": "ast parser", "why_it_failed": "complex setup"},
+        ],
+        "dead_ends": [
+            {"position": 0.15, "what_happened": "regex backtracked"},
+            {"position": 0.42, "what_happened": "missing edge case"},
+            {"position": 0.61, "what_happened": "wrong import"},
+        ],
+        "breakthroughs": [{"position": 0.88, "what_worked": "ast walk"}],
+        "gotchas": ["null nodes", "tabs vs spaces", "comments",
+                    "windows line endings", "unicode"],
+        "sentiment_arc": {"start": "frustrated", "end": "resolved"},
     }
-
-    for name, sample in samples.items():
-        Path(f"sample_{name}.svg").write_text(generate_shell_svg(sample))
-        print(f"wrote sample_{name}.svg")
+    for g in [0.2, 0.4, 0.6, 0.8, 1.0]:
+        Path(f"growth_{int(g*100)}.svg").write_text(generate_shell_svg(sample, growth=g))
+        print(f"wrote growth_{int(g*100)}.svg")

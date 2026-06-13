@@ -6,6 +6,7 @@ import base64 as b64lib
 import json
 import os
 import tempfile
+import time
 import wave
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,11 @@ from shell import generate_shell_svg
 from transcribe import transcribe_audio
 from trace_parser import parse_trace_to_transcript, detect_trace_format
 
+
+# Growth stages for the live shell reveal. The slug grows the shell as it
+# watches: spiral lengthens, knots and jewels form in order, aperture opens last.
+GROWTH_STAGES = [0.18, 0.38, 0.58, 0.78, 1.0]
+GROWTH_PACING_SECONDS = 0.55  # brief pause between stages so the eye sees growth
 
 TTS_URL = os.environ.get(
     "MODAL_TTS_URL",
@@ -93,132 +99,21 @@ def on_audio_change(audio: str | None):
     )
 
 
-def process_audio(
-    audio: str | None,
-) -> tuple[
-    str,
-    str,
-    str,
-    str,
-    str,
-    str | None,
-    str | None,
-    str | None,
-    str | None,
-    str | None,
-]:
-    """Transcribe, extract, generate shell, and return all outputs."""
-    if audio is None:
-        message = "Give the slug an audio file first."
-        return message, "", "", "", "", None, None, None, None, None
-
-    # 1. Transcribe
-    transcript = transcribe_audio(audio)
-
-    # 2. Extract session features + slug voice.
-    #    extract_session uses the Modal dual-adapter endpoint:
-    #    extraction LoRA for the JSON, voice LoRA for slug_voice.
-    #    The 7B is only a labeled fallback inside extract_session.
-    extraction = extract_session(transcript)
-
-    # 3. Speak the recap aloud (Chatterbox TTS on Modal)
-    slug_audio_path = _speak_recap(extraction.get("slug_voice", []))
-
-    # 4. Reconcile duration. The model estimates the DESCRIBED session length
-    #    from the transcript ("three hours on one problem"); the audio file
-    #    gives the NARRATION length. A real-time narration makes these agree;
-    #    a compressed retelling makes the audio far shorter than the real
-    #    session. Take the larger so the shell reflects the work, not the
-    #    speaking time.
-    audio_minutes = round(_get_audio_duration_minutes(audio), 1)
-    model_minutes = extraction.get("duration_minutes", 0)
-    try:
-        model_minutes = float(model_minutes)
-    except (TypeError, ValueError):
-        model_minutes = 0.0
-    extraction["duration_minutes"] = round(max(audio_minutes, model_minutes), 1)
-
-    raw_json = json.dumps(extraction, indent=2)
-
-    # 5. Generate the shell + receipt SVGs
-    shell_svg = generate_shell_svg(extraction)
-    receipt_svg = generate_receipt_svg(extraction)
-
-    # 6. Write downloadable files
-    tmp_dir = Path(tempfile.mkdtemp(prefix="slug_"))
-
-    svg_path = tmp_dir / "shell.svg"
-    svg_path.write_text(shell_svg)
-
-    receipt_path = tmp_dir / "receipt.svg"
-    receipt_path.write_text(receipt_svg)
-
-    skill_path = tmp_dir / "skill.md"
-    skill_path.write_text(extraction.get("skill_md", ""))
-
-    # Build recap text WITHOUT mutating the extraction's slug_voice list
-    recap_lines = list(extraction.get("slug_voice", [])) + ["I was here."]
-    recap_path = tmp_dir / "slug_recap.txt"
-    recap_path.write_text("\n\n".join(recap_lines))
-
-    return (
-        f"## Transcript\n\n{transcript}",
-        _format_slug_recap(extraction),
-        shell_svg,
-        receipt_svg,
-        raw_json,
-        slug_audio_path,
-        str(svg_path),
-        str(receipt_path),
-        str(skill_path),
-        str(recap_path),
-    )
+def _empty_outputs(message: str):
+    """Ten-tuple matching the output components, for early/error yields."""
+    return (message, "", "", "", "", None, None, None, None, None)
 
 
+def _finalize_outputs(transcript_display: str, extraction: dict, slug_audio_path):
+    """Build the full ten-tuple of outputs once the shell is fully grown.
 
-def process_trace(trace_file: str | None):
-    """Parse an agent session JSONL trace and run it through the same pipeline.
-
-    A Claude Code or Codex CLI session log becomes witness testimony the slug
-    reads exactly like a spoken transcript. This is the input judges can feed
-    from their own machines.
+    Shared by the audio and trace paths so both render identically.
     """
-    if trace_file is None:
-        message = "Drop a Claude Code or Codex session trace first."
-        return message, "", "", "", "", None, None, None, None, None
-
-    try:
-        with open(trace_file, "r", encoding="utf-8", errors="replace") as f:
-            jsonl_string = f.read()
-    except Exception as e:
-        return f"Could not read the trace: {e}", "", "", "", "", None, None, None, None, None
-
-    source = detect_trace_format(jsonl_string)
-    transcript = parse_trace_to_transcript(jsonl_string)
-    if not transcript:
-        return (
-            "The slug could not find a session in that file.",
-            "", "", "", "", None, None, None, None, None,
-        )
-
-    # From here, identical to the audio path: extract, generate, render.
-    extraction = extract_session(transcript)
-    slug_audio_path = _speak_recap(extraction.get("slug_voice", []))
-
-    # Duration: no audio file, so trust the model's estimate of the described
-    # session length. Fall back to a minimum if the model gave nothing.
-    model_minutes = extraction.get("duration_minutes", 0)
-    try:
-        model_minutes = float(model_minutes)
-    except (TypeError, ValueError):
-        model_minutes = 0.0
-    extraction["duration_minutes"] = round(model_minutes, 1) if model_minutes > 0 else 1.0
-
     raw_json = json.dumps(extraction, indent=2)
-    shell_svg = generate_shell_svg(extraction)
+    shell_svg = generate_shell_svg(extraction, growth=1.0)
     receipt_svg = generate_receipt_svg(extraction)
 
-    tmp_dir = Path(tempfile.mkdtemp(prefix="slug_trace_"))
+    tmp_dir = Path(tempfile.mkdtemp(prefix="slug_"))
     svg_path = tmp_dir / "shell.svg"
     svg_path.write_text(shell_svg)
     receipt_path = tmp_dir / "receipt.svg"
@@ -228,12 +123,6 @@ def process_trace(trace_file: str | None):
     recap_lines = list(extraction.get("slug_voice", [])) + ["I was here."]
     recap_path = tmp_dir / "slug_recap.txt"
     recap_path.write_text("\n\n".join(recap_lines))
-
-    label = {"claude": "Claude Code", "codex": "Codex CLI"}.get(source, "agent")
-    transcript_display = (
-        f"## Session trace ({label})\n\n"
-        f"The slug read your {label} session and witnessed this:\n\n{transcript}"
-    )
 
     return (
         transcript_display,
@@ -247,6 +136,95 @@ def process_trace(trace_file: str | None):
         str(skill_path),
         str(recap_path),
     )
+
+
+def _grow_shell_stages(extraction: dict, transcript_display: str):
+    """Yield the shell at each growth stage, holding other outputs empty until
+    the shell is fully grown. The final result is yielded by the caller.
+
+    This is the live terrarium effect: the slug grows the shell as it watches,
+    spiral lengthening, knots and jewels forming in order, aperture opening last.
+    """
+    for g in GROWTH_STAGES:
+        if g >= 1.0:
+            break
+        partial = generate_shell_svg(extraction, growth=g)
+        yield (
+            "*The slug is growing your shell...*",
+            f"*growing... {int(g*100)}%*",
+            partial,
+            "", "", None, None, None, None, None,
+        )
+        time.sleep(GROWTH_PACING_SECONDS)
+
+
+def process_audio(audio: str | None):
+    """Transcribe, extract, then GROW the shell live, yielding each stage."""
+    if audio is None:
+        yield _empty_outputs("Give the slug an audio file first.")
+        return
+
+    transcript = transcribe_audio(audio)
+    extraction = extract_session(transcript)
+    slug_audio_path = _speak_recap(extraction.get("slug_voice", []))
+
+    audio_minutes = round(_get_audio_duration_minutes(audio), 1)
+    model_minutes = extraction.get("duration_minutes", 0)
+    try:
+        model_minutes = float(model_minutes)
+    except (TypeError, ValueError):
+        model_minutes = 0.0
+    extraction["duration_minutes"] = round(max(audio_minutes, model_minutes), 1)
+
+    transcript_display = f"## Transcript\n\n{transcript}"
+    yield from _grow_shell_stages(extraction, transcript_display)
+    yield _finalize_outputs(transcript_display, extraction, slug_audio_path)
+
+
+
+def process_trace(trace_file: str | None):
+    """Parse an agent session JSONL trace, then GROW the shell live.
+
+    A Claude Code or Codex CLI session log becomes witness testimony the slug
+    reads exactly like a spoken transcript. This is the input judges can feed
+    from their own machines.
+    """
+    if trace_file is None:
+        yield _empty_outputs("Drop a Claude Code or Codex session trace first.")
+        return
+
+    try:
+        with open(trace_file, "r", encoding="utf-8", errors="replace") as f:
+            jsonl_string = f.read()
+    except Exception as e:
+        yield _empty_outputs(f"Could not read the trace: {e}")
+        return
+
+    source = detect_trace_format(jsonl_string)
+    transcript = parse_trace_to_transcript(jsonl_string)
+    if not transcript:
+        yield _empty_outputs("The slug could not find a session in that file.")
+        return
+
+    extraction = extract_session(transcript)
+    slug_audio_path = _speak_recap(extraction.get("slug_voice", []))
+
+    # Duration: no audio file, so trust the model's estimate.
+    model_minutes = extraction.get("duration_minutes", 0)
+    try:
+        model_minutes = float(model_minutes)
+    except (TypeError, ValueError):
+        model_minutes = 0.0
+    extraction["duration_minutes"] = round(model_minutes, 1) if model_minutes > 0 else 1.0
+
+    label = {"claude": "Claude Code", "codex": "Codex CLI"}.get(source, "agent")
+    transcript_display = (
+        f"## Session trace ({label})\n\n"
+        f"The slug read your {label} session and witnessed this:\n\n{transcript}"
+    )
+
+    yield from _grow_shell_stages(extraction, transcript_display)
+    yield _finalize_outputs(transcript_display, extraction, slug_audio_path)
 
 
 def build_interface() -> gr.Blocks:
