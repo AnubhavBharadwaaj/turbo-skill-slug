@@ -26,6 +26,8 @@ Staged growth:
 import colorsys
 import math
 import random
+
+from shell_battle import build_battle_layer
 from typing import Any
 
 
@@ -356,6 +358,21 @@ def generate_shell_svg(features: dict[str, Any], growth: float = 1.0) -> str:
         f'<circle cx="{ex - 0.4:.1f}" cy="{ey - 0.5:.1f}" r="0.6" '
         f'fill="#fff" opacity="0.9"/>'
     )
+
+    # ---- BYOBU BATTLE LAYER (figures along the spiral) ----
+    # Always on: the nautilus is the battlefield. Dead ends are fallen
+    # warriors, gotchas are archers, the breakthrough is the dragon at the
+    # aperture. Drawn under the canonical knots/jewels so the markers still
+    # read. Only on the fully grown shell (growth>=1.0); during birth the
+    # shell forms first, then the battle populates it.
+    if growth >= 1.0:
+        try:
+            svg.append(build_battle_layer(
+                features, centerline, outer_pts, thickness_at, n_full, pal, seed
+            ))
+        except Exception as _battle_err:
+            # The battle layer is decorative; never let it break the shell.
+            pass
 
     # ---- DEAD-END KNOTS (only those that have formed by this growth) ----
     for de in dead_ends:
