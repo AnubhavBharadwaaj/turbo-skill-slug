@@ -166,6 +166,72 @@ def _principles_block(extraction: dict) -> str:
     return "\n".join(out)
 
 
+
+
+def _is_terse(text: str) -> bool:
+    """A gotcha is terse (low-value) if it's short and lacks a cause/fix signal."""
+    t = str(text).strip()
+    if len(t.split()) <= 6:
+        return True
+    # no causal/fix language -> probably just a label
+    signals = ("because", "since", "so ", "instead", "fix", "use ", "avoid",
+               "must", "should", "results in", "leads to", "causes", ";")
+    return not any(sig in t.lower() for sig in signals)
+
+
+def enrich_gotchas(extraction: dict, complete=None) -> dict:
+    """Optionally expand terse gotchas into symptom/cause/fix form via one model
+    call. `complete` is a function (prompt:str) -> str. If None, or if no terse
+    gotchas, returns the extraction unchanged.
+
+    This is the optional depth pass: the better extraction prompt handles most
+    cases; this rescues sessions where the model still emitted thin labels.
+    """
+    gotchas = extraction.get("gotchas", []) or []
+    if not complete or not gotchas:
+        return extraction
+    terse = [g for g in gotchas if _is_terse(g)]
+    if not terse:
+        return extraction
+
+    themes = ", ".join(extraction.get("themes", []) or []) or "this problem"
+    approaches = extraction.get("approaches_tried", []) or []
+    ctx_lines = []
+    for a in approaches:
+        if isinstance(a, dict) and a.get("approach"):
+            ctx_lines.append(f"- tried {a['approach']}: {a.get('why_it_failed','')}")
+    ctx = "\n".join(ctx_lines)
+
+    prompt = (
+        "You are sharpening the gotchas in a coding skill file so they give a "
+        "capable engineer real, non-obvious help. Context (problem area: "
+        f"{themes}):\n{ctx}\n\n"
+        "Rewrite each of the following terse gotchas into ONE self-contained "
+        "sentence that names the symptom, the cause, and what to do instead. If a "
+        "gotcha is too vague to rescue, return it unchanged. Keep them concrete and "
+        "specific to this problem area. Return ONLY a JSON array of strings, same "
+        "length and order as the input.\n\nInput gotchas:\n"
+        + "\n".join(f"- {g}" for g in terse)
+    )
+
+    try:
+        import json
+        raw = complete(prompt)
+        raw = raw.strip()
+        # strip code fences if present
+        import re as _re
+        raw = _re.sub(r"^```(?:json)?|```$", "", raw, flags=_re.MULTILINE).strip()
+        expanded = json.loads(raw)
+        if isinstance(expanded, list) and len(expanded) == len(terse):
+            # map terse -> expanded
+            mapping = dict(zip(terse, [str(e).strip() for e in expanded]))
+            extraction = dict(extraction)
+            extraction["gotchas"] = [mapping.get(g, g) for g in gotchas]
+    except Exception:
+        pass  # never let enrichment break the pipeline
+    return extraction
+
+
 def build_skill_md(extraction: dict) -> str:
     """Assemble a transferable SKILL.md from the structured extraction."""
     themes = extraction.get("themes", []) or []
