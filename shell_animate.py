@@ -28,7 +28,7 @@ STYLES = ("shards", "draw", "glass")
 
 # Set False for final submission; True shows a live badge reporting whether the
 # SMIL animation is present and actually running inside the iframe.
-DIAGNOSTIC = True
+DIAGNOSTIC = False
 
 
 def pick_style(seed) -> str:
@@ -51,7 +51,7 @@ def _shards(svg: str, rng: random.Random) -> str:
     # Body: fade up (cooling glass) via opacity animate
     body_anim = (
         '<animate attributeName="opacity" from="0" to="1" '
-        'dur="1.4s" begin="0s" fill="freeze"/>'
+        'dur="2.6s" begin="0.3s" fill="freeze"/>'
     )
     svg = _animate_attr(r'<path class="shell-body"[^>]*/>', svg, body_anim)
 
@@ -64,10 +64,10 @@ def _shards(svg: str, rng: random.Random) -> str:
             inner = tag[:-2].rstrip()
             anim = (
                 f'<animateTransform attributeName="transform" type="translate" '
-                f'from="{dx:.0f} {dy:.0f}" to="0 0" dur="1.1s" begin="{delay}s" '
+                f'from="{dx:.0f} {dy:.0f}" to="0 0" dur="2.4s" begin="{delay}s" '
                 f'fill="freeze" calcMode="spline" keySplines="0.2 0.8 0.2 1" keyTimes="0;1"/>'
                 f'<animate attributeName="opacity" from="0" to="{0.9 if cls=="shell-knot" else 0.95}" '
-                f'dur="0.9s" begin="{delay}s" fill="freeze"/>'
+                f'dur="2.0s" begin="{delay}s" fill="freeze"/>'
             )
             return f"{inner}>{anim}</circle>"
         return repl
@@ -89,7 +89,7 @@ def _draw(svg: str) -> str:
         inner = inner.replace("<path", '<path stroke-dasharray="6000"', 1)
         anim = (
             '<animate attributeName="stroke-dashoffset" from="6000" to="0" '
-            'dur="1.8s" begin="0s" fill="freeze"/>'
+            'dur="3.2s" begin="0.3s" fill="freeze"/>'
         )
         return f"{inner}>{anim}</path>"
     svg = re.sub(r'<path class="shell-centerline"[^>]*/>', draw_path, svg)
@@ -98,7 +98,7 @@ def _draw(svg: str) -> str:
     # Body fades in behind the drawing line
     body_anim = (
         '<animate attributeName="opacity" from="0" to="1" '
-        'dur="1.8s" begin="0.3s" fill="freeze"/>'
+        'dur="3.4s" begin="0.6s" fill="freeze"/>'
     )
     svg = _animate_attr(r'<path class="shell-body"[^>]*/>', svg, body_anim)
 
@@ -130,14 +130,14 @@ def _glass(svg: str) -> str:
     # opacity + a brief over-bright flash via a second opacity pulse).
     body_anim = (
         '<animate attributeName="opacity" values="0;0.5;1" keyTimes="0;0.5;1" '
-        'dur="2.0s" begin="0s" fill="freeze"/>'
+        'dur="3.4s" begin="0.3s" fill="freeze"/>'
     )
     svg = _animate_attr(r'<path class="shell-body"[^>]*/>', svg, body_anim)
 
     # Knots & jewels twinkle in
     twinkle = (
-        '<animate attributeName="opacity" values="0;1" dur="1.4s" '
-        'begin="0.5s" fill="freeze"/>'
+        '<animate attributeName="opacity" values="0;1" dur="2.4s" '
+        'begin="1.0s" fill="freeze"/>'
     )
     svg = _animate_attr(r'<circle class="shell-knot"[^>]*/>', svg, twinkle)
     svg = _animate_attr(r'<circle class="shell-jewel"[^>]*/>', svg, twinkle)
@@ -193,6 +193,42 @@ def animate_shell_svg(svg: str, seed=0, style: str | None = None) -> str:
     return _glass(svg)
 
 
+
+REPLAY_HTML = """
+<button id="replay-birth" title="watch the shell grow again">↻ watch it grow again</button>
+<style>
+#replay-birth{
+  position:fixed;left:50%;bottom:10px;transform:translateX(-50%);
+  z-index:9999;font:12px/1.2 Georgia,serif;font-style:italic;
+  padding:6px 14px;border-radius:14px;cursor:pointer;
+  background:rgba(20,16,12,0.55);color:#efe0b0;border:1px solid rgba(200,162,76,0.5);
+  backdrop-filter:blur(2px);transition:opacity .3s;opacity:0.75;
+}
+#replay-birth:hover{opacity:1;background:rgba(20,16,12,0.75);}
+</style>
+<script>
+(function(){
+  function restart(){
+    var svg = document.querySelector('svg');
+    if(!svg) return;
+    try { svg.setCurrentTime(0); } catch(e){}
+    var anims = svg.querySelectorAll('animate, animateTransform, animateMotion');
+    anims.forEach(function(a){ try { a.beginElement(); } catch(e){} });
+  }
+  var btn = document.getElementById('replay-birth');
+  if(btn){ btn.addEventListener('click', restart); }
+})();
+</script>
+"""
+
+
+def inject_replay(iframe_inner_html: str) -> str:
+    """Add a 'watch it grow again' button + restart JS inside the iframe doc."""
+    if "</body>" in iframe_inner_html:
+        return iframe_inner_html.replace("</body>", REPLAY_HTML + "</body>", 1)
+    return iframe_inner_html + REPLAY_HTML
+
+
 def wrap_in_iframe(animated_svg: str, height: int = 660) -> str:
     """Wrap an animated SVG in an <iframe srcdoc> so Gradio's HTML sanitizer
     cannot strip the SMIL animation. The iframe is an isolated document; its
@@ -212,6 +248,7 @@ def wrap_in_iframe(animated_svg: str, height: int = 660) -> str:
     )
     if DIAGNOSTIC:
         doc = inject_probe(doc)
+    doc = inject_replay(doc)
     escaped = _html.escape(doc, quote=True)
     # The shell is square. Render the iframe as a centered square that fits the
     # column width but caps at `height`px tall, so the WHOLE shell shows (no
