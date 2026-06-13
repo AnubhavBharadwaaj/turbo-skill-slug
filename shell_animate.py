@@ -19,10 +19,16 @@ All styles end on the exact static shell (freeze), so nothing is lost.
 
 from __future__ import annotations
 
+from anim_diagnostic import inject_probe
+
 import random
 import re
 
 STYLES = ("shards", "draw", "glass")
+
+# Set False for final submission; True shows a live badge reporting whether the
+# SMIL animation is present and actually running inside the iframe.
+DIAGNOSTIC = True
 
 
 def pick_style(seed) -> str:
@@ -199,13 +205,22 @@ def wrap_in_iframe(animated_svg: str, height: int = 660) -> str:
     # The SVG becomes a full tiny HTML document inside the iframe
     doc = (
         "<!DOCTYPE html><html><head><style>"
-        "html,body{margin:0;padding:0;background:transparent;overflow:hidden}"
-        "svg{width:100%;height:auto;display:block}"
+        "html,body{margin:0;padding:0;background:transparent;overflow:hidden;"
+        "height:100%;display:flex;align-items:center;justify-content:center}"
+        "svg{max-width:100%;max-height:100%;width:auto;height:auto;display:block}"
         "</style></head><body>" + animated_svg + "</body></html>"
     )
+    if DIAGNOSTIC:
+        doc = inject_probe(doc)
     escaped = _html.escape(doc, quote=True)
+    # The shell is square. Render the iframe as a centered square that fits the
+    # column width but caps at `height`px tall, so the WHOLE shell shows (no
+    # top/bottom clipping). max-width keeps it from ballooning on wide screens.
     return (
+        f'<div style="display:flex;justify-content:center;width:100%;">'
         f'<iframe srcdoc="{escaped}" '
-        f'style="width:100%;height:{height}px;border:none;background:transparent;" '
+        f'style="width:{height}px;max-width:100%;height:{height}px;'
+        f'border:none;background:transparent;" '
         f'sandbox="allow-scripts"></iframe>'
+        f'</div>'
     )
