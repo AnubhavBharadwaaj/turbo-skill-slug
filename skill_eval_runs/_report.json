@@ -1,0 +1,28 @@
+{
+  "n_total": 2,
+  "n_leaked_excluded": 0,
+  "n_scored": 2,
+  "baseline_no_skill_mean": 1.0,
+  "with_skill_mean": 1.0,
+  "uplift": 0.0,
+  "wins": 0,
+  "ties": 2,
+  "losses": 0,
+  "per_case": [
+    {
+      "name": "tree_dp_to_new_tree_problem",
+      "no_skill": 1.0,
+      "with_skill": 1.0,
+      "delta": 0.0,
+      "leaked": false
+    },
+    {
+      "name": "markov_to_new_absorbing_chain",
+      "no_skill": 1.0,
+      "with_skill": 1.0,
+      "delta": 0.0,
+      "leaked": false
+    }
+  ],
+  "raw_saved_to": "./skill_eval_runs"
+}

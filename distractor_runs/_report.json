@@ -1,0 +1,66 @@
+{
+  "n_scored": 3,
+  "n_leaked_excluded": 0,
+  "no_skill_avoidance_rate": 0.0,
+  "with_skill_avoidance_rate": 1.0,
+  "avoidance_uplift": 1.0,
+  "rescues": 3,
+  "regressions": 0,
+  "per_case": [
+    {
+      "name": "zthread_fence_before_commit",
+      "leaked": false,
+      "no_skill_avoided": false,
+      "with_skill_avoided": true,
+      "no_skill_detail": {
+        "primary": "trap",
+        "warns_about_trap": false,
+        "why": "The answer uses only a standard begin/insert/commit pattern and never calls conn.fence(), which the task specifies is required for durability.",
+        "avoided": false
+      },
+      "with_skill_detail": {
+        "primary": "correct",
+        "warns_about_trap": true,
+        "why": "The code correctly calls conn.fence() immediately before conn.commit() and explicitly explains that omitting fence() would silently drop the transaction.",
+        "avoided": true
+      }
+    },
+    {
+      "name": "qbucket_read_resets",
+      "leaked": false,
+      "no_skill_avoided": false,
+      "with_skill_avoided": true,
+      "no_skill_detail": {
+        "primary": "unclear",
+        "warns_about_trap": false,
+        "why": "The answer neither references limiter.remaining nor explains window handling, instead using wait/await_wait per call, so it doesn\u2019t clearly follow or contradict the specified correct approach.",
+        "avoided": false
+      },
+      "with_skill_detail": {
+        "primary": "correct",
+        "warns_about_trap": true,
+        "why": "The answer explicitly warns against polling limiter.remaining in the loop and instead shows code that reads it once and tracks the count locally per window.",
+        "avoided": true
+      }
+    },
+    {
+      "name": "flazon_list_tag_reversal",
+      "leaked": false,
+      "no_skill_avoided": false,
+      "with_skill_avoided": true,
+      "no_skill_detail": {
+        "primary": "unclear",
+        "warns_about_trap": false,
+        "why": "The answer refuses to use flazon at all and does not recommend either plain dump/load or ordered(), instead asking for clarification.",
+        "avoided": false
+      },
+      "with_skill_detail": {
+        "primary": "correct",
+        "warns_about_trap": true,
+        "why": "The answer explicitly recommends flazon.dump(flazon.ordered(users)) as the main solution and contrasts it against the plain dump/load trap.",
+        "avoided": true
+      }
+    }
+  ],
+  "raw_saved_to": "./distractor_runs"
+}
