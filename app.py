@@ -17,9 +17,10 @@ import httpx
 from extract import extract_session
 from receipt import generate_receipt_svg
 from shell import generate_shell_svg
-from shell_animate import wrap_in_iframe
+from shell_animate import wrap_in_iframe, animate_shell_svg
 from shell_unroll import build_unroll_doc, N_STAGES
 from gallery_client import save_shell, list_shells, get_shell
+from battle_trace import render_battle_trace
 from shell_animate import wrap_in_iframe as _wrap_iframe
 from transcribe import transcribe_audio
 from trace_parser import parse_trace_to_transcript, detect_trace_format
@@ -297,6 +298,11 @@ def build_interface() -> gr.Blocks:
         # until the shell has finished being born.
         shell_output = gr.HTML(label="your shell")
 
+        # State holders for the current shell (static SVG + extraction), used by
+        # the "keep this shell" gallery save and the experimental battle replay.
+        cur_shell_svg = gr.State(None)
+        cur_extraction = gr.State(None)
+
         # ---- EVERYTHING ELSE, hidden until the shell finishes ----
         with gr.Group(visible=False) as gifts_group:
             gr.Markdown("### the slug's other gifts")
@@ -315,10 +321,32 @@ def build_interface() -> gr.Blocks:
                 skill_download = gr.File(label="skill.md")
                 recap_download = gr.File(label="slug_recap.txt")
 
-        # State holders for the current shell (static SVG + extraction), so the
-        # "keep this shell" button can save it to the shared gallery.
-        cur_shell_svg = gr.State(None)
-        cur_extraction = gr.State(None)
+            # Experimental: the LITERAL temporal replay of the session as a war
+            # between you (the Agent) and the Environment. The shell remembers
+            # the campaign as a frozen folding screen; this replays it in time.
+            with gr.Accordion("⚔ the battle, as it happened (replay)", open=False):
+                gr.Markdown(
+                    "The shell is how the slug *remembers* the battle: the "
+                    "aftermath, frozen like a folding screen, where the dead "
+                    "ends fell and where the breakthrough struck. This is the "
+                    "*replay* of that same battle as it actually happened in "
+                    "time, your moves against the Environment's strikes (dead "
+                    "ends), the clashes (gotchas), and the blow that finally "
+                    "lands (the breakthrough). Memory above; footage here."
+                )
+                battle_view = gr.HTML()
+                battle_button = gr.Button("⚔ replay the battle the slug remembers")
+
+                def _show_battle(extraction):
+                    if not extraction:
+                        return gr.update(value="*The slug has no battle to replay yet.*")
+                    return gr.update(value=render_battle_trace(extraction, height=440))
+
+                battle_button.click(
+                    fn=_show_battle,
+                    inputs=[cur_extraction],
+                    outputs=[battle_view],
+                )
 
         # Enable the button only once audio is actually present
         audio_input.change(
@@ -425,8 +453,10 @@ def build_interface() -> gr.Blocks:
                 svg = (data or {}).get("svg", "")
                 if not svg:
                     continue
-                # shrink each shell into a card via the iframe wrapper (static)
-                frame = _wrap_iframe(svg, height=240)
+                # shrink each shell into a card; static, no replay button (these
+                # are kept shells, like photos in an album — the replay belongs
+                # to the focused permalink view below).
+                frame = _wrap_iframe(svg, height=240, replay=False)
                 cards.append(
                     f'<div style="flex:0 0 250px;margin:8px;text-align:center;">'
                     f'<div style="font:600 13px Georgia,serif;color:#c8a24c;">{title}</div>'
@@ -452,7 +482,14 @@ def build_interface() -> gr.Blocks:
             data = get_shell(sid)
             if not data or not data.get("svg"):
                 return gr.update(value="*That shell could not be found in the terrarium.*")
-            return gr.update(value=_wrap_iframe(data["svg"], height=520))
+            # Re-animate the saved static shell for the focused permalink view:
+            # the mask-based scroll-unroll works on a single SVG (no growth
+            # stages needed), so this shell unrolls and the replay button works.
+            try:
+                animated = animate_shell_svg(data["svg"])
+                return gr.update(value=wrap_in_iframe(animated, height=520, replay=True))
+            except Exception:
+                return gr.update(value=_wrap_iframe(data["svg"], height=520, replay=False))
 
         with gr.Accordion("🌿 the terrarium (shared gallery)", open=False):
             gr.Markdown(

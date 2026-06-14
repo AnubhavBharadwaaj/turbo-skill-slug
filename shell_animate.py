@@ -164,7 +164,7 @@ def inject_replay(iframe_inner_html: str) -> str:
     return iframe_inner_html + REPLAY_HTML
 
 
-def wrap_in_iframe(animated_svg: str, height: int = 660) -> str:
+def wrap_in_iframe(animated_svg: str, height: int = 660, replay: bool = True) -> str:
     """Wrap the animated SVG in an <iframe srcdoc> (survives Gradio sanitizer),
     rendered as a centered square so the whole shell shows."""
     import html as _html
@@ -177,7 +177,8 @@ def wrap_in_iframe(animated_svg: str, height: int = 660) -> str:
     )
     if DIAGNOSTIC:
         doc = inject_probe(doc)
-    doc = inject_replay(doc)
+    if replay:
+        doc = inject_replay(doc)
     escaped = _html.escape(doc, quote=True)
     return (
         f'<div style="display:flex;justify-content:center;width:100%;">'
