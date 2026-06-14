@@ -146,52 +146,95 @@ function play(ev){const a=godA(),e=godE();const mx=W*0.5+(ev.t/span-0.5)*W*0.12,
   document.getElementById("capT").textContent="t+"+ev.t.toFixed(1)+"s";
   document.getElementById("capX").textContent=ev.label;}
 function aura(g,c,r){const gr=ctx.createRadialGradient(g.x,g.y,4,g.x,g.y,r);gr.addColorStop(0,c+"66");gr.addColorStop(1,c+"00");ctx.fillStyle=gr;ctx.beginPath();ctx.arc(g.x,g.y,r,0,7);ctx.fill();}
-function general(g,c){// the Agent: a samurai general — kabuto helmet + katana
-  aura(g,c,60);
-  ctx.save();ctx.translate(g.x,g.y);
-  ctx.strokeStyle=c;ctx.fillStyle="#0a0e14";ctx.lineWidth=2;
-  // body
-  ctx.beginPath();ctx.moveTo(-12,34);ctx.lineTo(-8,2);ctx.lineTo(8,2);ctx.lineTo(12,34);ctx.closePath();ctx.fill();ctx.stroke();
-  // head
-  ctx.beginPath();ctx.arc(0,-10,11,0,7);ctx.fill();ctx.stroke();
-  // kabuto crest (horns)
-  ctx.beginPath();ctx.moveTo(-11,-16);ctx.quadraticCurveTo(-20,-30,-6,-22);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(11,-16);ctx.quadraticCurveTo(20,-30,6,-22);ctx.stroke();
-  // katana raised
-  ctx.strokeStyle="#e6c870";ctx.lineWidth=2.5;
-  ctx.beginPath();ctx.moveTo(10,4);ctx.lineTo(40,-34);ctx.stroke();
+function general(g,c){// the Agent: a detailed samurai general
+  aura(g,c,62);
+  ctx.save();ctx.translate(g.x,g.y);ctx.scale(1.15,1.15);ctx.lineJoin="round";ctx.lineCap="round";
+  const ink=c,fill="#0c1118",plate="#11202b",gold="#e6c870";ctx.lineWidth=2;
+  // sashimono back banner
+  ctx.strokeStyle=ink;ctx.beginPath();ctx.moveTo(14,-6);ctx.lineTo(20,-54);ctx.stroke();
+  ctx.fillStyle=ink;ctx.globalAlpha=.22;ctx.beginPath();ctx.moveTo(20,-54);ctx.lineTo(40,-50);ctx.lineTo(38,-30);ctx.lineTo(20,-34);ctx.closePath();ctx.fill();
+  ctx.globalAlpha=1;ctx.strokeStyle=gold;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(20,-54);ctx.lineTo(40,-50);ctx.lineTo(38,-30);ctx.lineTo(20,-34);ctx.closePath();ctx.stroke();
+  // hakama legs
+  ctx.lineWidth=2;ctx.strokeStyle=ink;ctx.fillStyle=fill;
+  ctx.beginPath();ctx.moveTo(-10,40);ctx.lineTo(-8,18);ctx.lineTo(0,16);ctx.lineTo(-2,40);ctx.closePath();ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.moveTo(10,40);ctx.lineTo(8,18);ctx.lineTo(0,16);ctx.lineTo(2,40);ctx.closePath();ctx.fill();ctx.stroke();
+  // torso armor (do)
+  ctx.fillStyle=plate;ctx.beginPath();ctx.moveTo(-12,2);ctx.quadraticCurveTo(-14,-14,0,-18);ctx.quadraticCurveTo(14,-14,12,2);ctx.lineTo(10,20);ctx.lineTo(-10,20);ctx.closePath();ctx.fill();ctx.stroke();
+  ctx.strokeStyle=ink;ctx.globalAlpha=.7;for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(-11,2+i*6);ctx.lineTo(11,2+i*6);ctx.stroke();}ctx.globalAlpha=1;
+  // sode shoulder guards
+  ctx.fillStyle=plate;
+  ctx.beginPath();ctx.moveTo(-12,-12);ctx.lineTo(-22,-8);ctx.lineTo(-20,6);ctx.lineTo(-12,2);ctx.closePath();ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.moveTo(12,-12);ctx.lineTo(22,-8);ctx.lineTo(20,6);ctx.lineTo(12,2);ctx.closePath();ctx.fill();ctx.stroke();
+  // head + menpo
+  ctx.fillStyle=fill;ctx.beginPath();ctx.arc(0,-26,8,0,7);ctx.fill();ctx.stroke();
+  ctx.strokeStyle=ink;ctx.beginPath();ctx.moveTo(-5,-24);ctx.lineTo(5,-24);ctx.stroke();
+  // kabuto bowl
+  ctx.fillStyle=plate;ctx.beginPath();ctx.arc(0,-30,10,Math.PI,0);ctx.lineTo(9,-30);ctx.lineTo(-9,-30);ctx.closePath();ctx.fill();ctx.stroke();
+  // golden crescent crest
+  ctx.strokeStyle=gold;ctx.lineWidth=2.4;
+  ctx.beginPath();ctx.moveTo(-7,-38);ctx.quadraticCurveTo(-18,-52,-4,-46);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(7,-38);ctx.quadraticCurveTo(18,-52,4,-46);ctx.stroke();
+  ctx.fillStyle=gold;ctx.beginPath();ctx.arc(0,-44,2.2,0,7);ctx.fill();
+  // arm + raised katana
+  ctx.strokeStyle=ink;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(8,-4);ctx.lineTo(16,-2);ctx.stroke();
+  ctx.strokeStyle="#cfe8ff";ctx.lineWidth=2.6;ctx.beginPath();ctx.moveTo(16,-2);ctx.lineTo(52,-44);ctx.stroke();
+  ctx.strokeStyle=gold;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(13,2);ctx.lineTo(18,-4);ctx.stroke();
   ctx.restore();
 }
-function adversary(g,c){// the Environment: a looming horned mass
-  aura(g,c,64);
-  ctx.save();ctx.translate(g.x,g.y);
-  ctx.strokeStyle=c;ctx.fillStyle="#0a0e14";ctx.lineWidth=2;
-  // hulking body
-  ctx.beginPath();ctx.moveTo(-22,36);ctx.quadraticCurveTo(-26,-6,0,-18);ctx.quadraticCurveTo(26,-6,22,36);ctx.closePath();ctx.fill();ctx.stroke();
-  // horns
-  ctx.beginPath();ctx.moveTo(-14,-16);ctx.lineTo(-26,-38);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(14,-16);ctx.lineTo(26,-38);ctx.stroke();
-  // eyes
-  ctx.fillStyle=c;ctx.beginPath();ctx.arc(-7,-6,2.4,0,7);ctx.fill();ctx.beginPath();ctx.arc(7,-6,2.4,0,7);ctx.fill();
+function adversary(g,c){// the Environment: a detailed oni
+  aura(g,c,66);
+  ctx.save();ctx.translate(g.x,g.y);ctx.scale(1.15,1.15);ctx.lineJoin="round";ctx.lineCap="round";ctx.lineWidth=2;
+  const ink=c,fill="#0c1118",hide="#241016";
+  ctx.fillStyle=hide;ctx.strokeStyle=ink;
+  ctx.beginPath();ctx.moveTo(-22,40);ctx.quadraticCurveTo(-30,-2,-14,-14);ctx.quadraticCurveTo(0,-22,14,-14);ctx.quadraticCurveTo(30,-2,22,40);ctx.closePath();ctx.fill();ctx.stroke();
+  ctx.globalAlpha=.5;ctx.beginPath();ctx.moveTo(-10,6);ctx.quadraticCurveTo(0,12,10,6);ctx.stroke();ctx.beginPath();ctx.moveTo(-8,18);ctx.quadraticCurveTo(0,24,8,18);ctx.stroke();ctx.globalAlpha=1;
+  // arms + claws
+  ctx.beginPath();ctx.moveTo(-18,-6);ctx.lineTo(-30,12);ctx.lineTo(-26,20);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(18,-6);ctx.lineTo(30,12);ctx.lineTo(26,20);ctx.stroke();
+  for(let i=-1;i<2;i++){ctx.beginPath();ctx.moveTo(-27+i*2,20);ctx.lineTo(-29+i*2,26);ctx.stroke();}
+  for(let i=-1;i<2;i++){ctx.beginPath();ctx.moveTo(27+i*2,20);ctx.lineTo(29+i*2,26);ctx.stroke();}
+  // head + horns
+  ctx.fillStyle=fill;ctx.beginPath();ctx.arc(0,-24,11,0,7);ctx.fill();ctx.stroke();
+  ctx.strokeStyle=ink;ctx.lineWidth=2.4;
+  ctx.beginPath();ctx.moveTo(-8,-32);ctx.quadraticCurveTo(-18,-46,-12,-50);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(8,-32);ctx.quadraticCurveTo(18,-46,12,-50);ctx.stroke();
+  // eyes + fangs
+  ctx.fillStyle=c;ctx.beginPath();ctx.arc(-4,-25,2.2,0,7);ctx.fill();ctx.beginPath();ctx.arc(4,-25,2.2,0,7);ctx.fill();
+  ctx.strokeStyle="#cfe8ff";ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(-4,-18);ctx.lineTo(-3,-14);ctx.stroke();ctx.beginPath();ctx.moveTo(4,-18);ctx.lineTo(3,-14);ctx.stroke();
+  // tetsubo iron club
+  ctx.strokeStyle=ink;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(26,16);ctx.lineTo(40,-20);ctx.stroke();
+  ctx.fillStyle=hide;ctx.beginPath();ctx.ellipse(42,-24,6,9,-0.5,0,7);ctx.fill();ctx.stroke();
+  ctx.fillStyle=ink;for(let i=0;i<4;i++){ctx.beginPath();ctx.arc(40+(i%2)*3,-22-i*2,1,0,7);ctx.fill();}
   ctx.restore();
 }
-function drawFallen(f){ctx.save();ctx.translate(f.x,f.y);ctx.strokeStyle="#ff7a59";ctx.lineWidth=1.6;ctx.globalAlpha=0.85;
-  // a fallen warrior: prone body + broken banner
-  ctx.beginPath();ctx.moveTo(-12,6);ctx.lineTo(10,10);ctx.stroke();
-  ctx.beginPath();ctx.arc(-14,4,4,0,7);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(6,10);ctx.lineTo(8,-8);ctx.stroke();// broken banner pole
+function drawFallen(f){ctx.save();ctx.translate(f.x,f.y);ctx.scale(1.2,1.2);ctx.lineJoin="round";ctx.lineCap="round";
+  ctx.strokeStyle="#ff7a59";ctx.lineWidth=1.6;ctx.globalAlpha=.9;
+  // prone body
+  ctx.beginPath();ctx.moveTo(-14,6);ctx.quadraticCurveTo(-2,10,12,8);ctx.stroke();
+  ctx.beginPath();ctx.arc(-16,4,4,0,7);ctx.stroke();// head
+  ctx.beginPath();ctx.moveTo(-4,7);ctx.lineTo(-2,1);ctx.stroke();// bent arm
+  // broken banner
+  ctx.beginPath();ctx.moveTo(8,8);ctx.lineTo(11,-10);ctx.stroke();
+  ctx.fillStyle="#ff7a59";ctx.globalAlpha=.3;ctx.beginPath();ctx.moveTo(11,-10);ctx.lineTo(20,-8);ctx.lineTo(18,-2);ctx.lineTo(11,-4);ctx.closePath();ctx.fill();
   ctx.globalAlpha=1;ctx.restore();}
-function drawDragon(f,dt){f.grow=Math.min(1,f.grow+dt*1.5);const s=f.grow;ctx.save();ctx.translate(f.x,f.y);ctx.scale(s,s);
-  ctx.strokeStyle="#e6c870";ctx.fillStyle="#0a0e14";ctx.lineWidth=2.2;
-  // coiling dragon body
-  ctx.beginPath();ctx.moveTo(-28,18);ctx.bezierCurveTo(-10,24,14,8,22,-14);ctx.bezierCurveTo(26,-26,8,-30,2,-18);ctx.stroke();
+function drawDragon(f,dt){f.grow=Math.min(1,f.grow+dt*1.5);const s=f.grow*2.2;ctx.save();ctx.translate(f.x,f.y);ctx.scale(s,s);ctx.lineJoin="round";ctx.lineCap="round";
+  const gold="#e6c870",dark="#0c1118",bright="#f3dd9a";
+  // filled tapering coil body
+  ctx.fillStyle=dark;ctx.strokeStyle=gold;ctx.lineWidth=2.4;
+  ctx.beginPath();ctx.moveTo(36,-2);ctx.bezierCurveTo(20,-20,-6,-16,-16,2);ctx.bezierCurveTo(-24,16,-6,30,8,24);ctx.bezierCurveTo(2,20,-4,12,4,8);ctx.bezierCurveTo(14,2,26,8,30,2);ctx.closePath();ctx.fill();ctx.stroke();
+  // back ridge highlight
+  ctx.strokeStyle=bright;ctx.lineWidth=1;ctx.globalAlpha=.8;ctx.beginPath();ctx.moveTo(34,-2);ctx.bezierCurveTo(18,-15,-4,-11,-12,3);ctx.stroke();ctx.globalAlpha=1;
+  // dorsal spikes
+  ctx.strokeStyle=gold;ctx.lineWidth=2;
+  for(const p of [[28,-6],[16,-12],[2,-11],[-9,-4]]){ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(p[0]+2,p[1]-8);ctx.stroke();}
   // head
-  ctx.beginPath();ctx.moveTo(-28,18);ctx.lineTo(-40,12);ctx.lineTo(-34,24);ctx.closePath();ctx.fill();ctx.stroke();
-  // horn + eye
-  ctx.beginPath();ctx.moveTo(-34,12);ctx.lineTo(-40,2);ctx.stroke();
-  ctx.fillStyle="#e6c870";ctx.beginPath();ctx.arc(-32,16,1.6,0,7);ctx.fill();
-  // mane spikes
-  for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(-20+i*10,16-i*6);ctx.lineTo(-16+i*10,8-i*6);ctx.stroke();}
+  ctx.fillStyle=dark;ctx.beginPath();ctx.moveTo(36,-2);ctx.lineTo(52,-8);ctx.lineTo(48,-2);ctx.lineTo(54,2);ctx.lineTo(44,6);ctx.lineTo(36,4);ctx.closePath();ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.moveTo(46,-6);ctx.lineTo(50,-16);ctx.stroke();// horn
+  ctx.beginPath();ctx.moveTo(52,-2);ctx.quadraticCurveTo(64,0,66,8);ctx.stroke();// whisker
+  ctx.fillStyle=bright;ctx.beginPath();ctx.arc(45,-1,1.6,0,7);ctx.fill();// eye
+  ctx.strokeStyle=bright;ctx.beginPath();ctx.moveTo(52,2);ctx.lineTo(50,5);ctx.stroke();// fang
+  // clawed foot
+  ctx.strokeStyle=gold;ctx.lineWidth=1.8;ctx.beginPath();ctx.moveTo(-6,26);ctx.lineTo(-9,33);ctx.moveTo(-1,27);ctx.lineTo(-1,34);ctx.moveTo(4,26);ctx.lineTo(7,33);ctx.stroke();
   ctx.restore();}
 function frame(ts){if(!W||!H)resize();if(!lastTs)lastTs=ts;const dt=Math.min(0.05,(ts-lastTs)/1000);lastTs=ts;
   if(running){clock+=dt;while(idx<EVENTS.length&&EVENTS[idx].t<=clock){play(EVENTS[idx]);idx++;}
