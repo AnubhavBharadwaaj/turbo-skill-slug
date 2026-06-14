@@ -119,10 +119,15 @@ const EVENTS = __EVENTS_JSON__;
 const C={cmd:"#6ee7ff",read:"#7ee787",clash:"#f0c674",err:"#ff7a59",retry:"#d2a8ff",win:"#7ee787",done:"#6ee7ff",info:"#8b98a9"};
 const cv=document.getElementById("stage"),ctx=cv.getContext("2d");
 let W=0,H=0,DPR=Math.min(2,window.devicePixelRatio||1);
-function resize(){const r=cv.getBoundingClientRect();W=r.width;H=r.height;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);}
+function resize(){
+  const r=cv.getBoundingClientRect();
+  W=r.width||window.innerWidth||640;
+  H=r.height||window.innerHeight||440;
+  cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);
+}
 addEventListener("resize",resize);
 const stars=[];for(let i=0;i<70;i++)stars.push({x:Math.random(),y:Math.random()*0.55,r:Math.random()*1.2,a:.3+Math.random()*.5});
-let particles=[],bolts=[],rings=[],markers=[],idx=0,clock=0,running=true,lastTs=0,hpA=100,hpE=100;
+let particles=[],bolts=[],rings=[],markers=[],figures=[],idx=0,clock=0,running=true,lastTs=0,hpA=100,hpE=100;
 const span=Math.max(8,EVENTS.length?EVENTS[EVENTS.length-1].t:10);
 function godA(){return{x:W*0.12,y:H*0.54}}function godE(){return{x:W*0.88,y:H*0.54}}
 function spark(x,y,c,n){for(let i=0;i<n;i++){const a=Math.random()*6.28,s=40+Math.random()*120;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,color:c,size:1.5+Math.random()*2})}}
@@ -131,6 +136,8 @@ function ring(x,y,c){rings.push({x,y,r:18,color:c,life:1})}
 function play(ev){const a=godA(),e=godE();const mx=W*0.5+(ev.t/span-0.5)*W*0.12,my=H*0.46+(Math.random()*40-20);
   const src=ev.side==="A"?a:e;ring(src.x,src.y,C[ev.kind]);bolt(src,{x:mx,y:my},C[ev.kind]);
   if(["clash","err","win","done"].includes(ev.kind))setTimeout(()=>spark(mx,my,C[ev.kind],ev.kind==="done"?30:16),130);
+  if(ev.kind==="err")figures.push({type:"fallen",x:mx,y:my,born:clock});
+  if(ev.kind==="done"||ev.kind==="win")figures.push({type:"dragon",x:mx,y:my,born:clock,grow:0});
   if(ev.kind==="err")hpA=Math.max(0,hpA-12);if(ev.kind==="clash")hpE=Math.max(0,hpE-8);
   if(ev.kind==="win"||ev.kind==="done")hpE=Math.max(0,hpE-15);
   markers.push({t:ev.t,color:C[ev.kind],r:0});
@@ -138,11 +145,55 @@ function play(ev){const a=godA(),e=godE();const mx=W*0.5+(ev.t/span-0.5)*W*0.12,
   document.getElementById("hpE").textContent="resistance "+Math.round(hpE);
   document.getElementById("capT").textContent="t+"+ev.t.toFixed(1)+"s";
   document.getElementById("capX").textContent=ev.label;}
-function god(g,c,l){const gr=ctx.createRadialGradient(g.x,g.y,4,g.x,g.y,54);gr.addColorStop(0,c+"99");gr.addColorStop(1,c+"00");
-  ctx.fillStyle=gr;ctx.beginPath();ctx.arc(g.x,g.y,54,0,7);ctx.fill();
-  ctx.fillStyle="#0a0e14";ctx.strokeStyle=c;ctx.lineWidth=2;ctx.beginPath();ctx.arc(g.x,g.y,24,0,7);ctx.fill();ctx.stroke();
-  ctx.fillStyle=c;ctx.font="600 22px ui-monospace,monospace";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(l,g.x,g.y+1);}
-function frame(ts){if(!lastTs)lastTs=ts;const dt=Math.min(0.05,(ts-lastTs)/1000);lastTs=ts;
+function aura(g,c,r){const gr=ctx.createRadialGradient(g.x,g.y,4,g.x,g.y,r);gr.addColorStop(0,c+"66");gr.addColorStop(1,c+"00");ctx.fillStyle=gr;ctx.beginPath();ctx.arc(g.x,g.y,r,0,7);ctx.fill();}
+function general(g,c){// the Agent: a samurai general — kabuto helmet + katana
+  aura(g,c,60);
+  ctx.save();ctx.translate(g.x,g.y);
+  ctx.strokeStyle=c;ctx.fillStyle="#0a0e14";ctx.lineWidth=2;
+  // body
+  ctx.beginPath();ctx.moveTo(-12,34);ctx.lineTo(-8,2);ctx.lineTo(8,2);ctx.lineTo(12,34);ctx.closePath();ctx.fill();ctx.stroke();
+  // head
+  ctx.beginPath();ctx.arc(0,-10,11,0,7);ctx.fill();ctx.stroke();
+  // kabuto crest (horns)
+  ctx.beginPath();ctx.moveTo(-11,-16);ctx.quadraticCurveTo(-20,-30,-6,-22);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(11,-16);ctx.quadraticCurveTo(20,-30,6,-22);ctx.stroke();
+  // katana raised
+  ctx.strokeStyle="#e6c870";ctx.lineWidth=2.5;
+  ctx.beginPath();ctx.moveTo(10,4);ctx.lineTo(40,-34);ctx.stroke();
+  ctx.restore();
+}
+function adversary(g,c){// the Environment: a looming horned mass
+  aura(g,c,64);
+  ctx.save();ctx.translate(g.x,g.y);
+  ctx.strokeStyle=c;ctx.fillStyle="#0a0e14";ctx.lineWidth=2;
+  // hulking body
+  ctx.beginPath();ctx.moveTo(-22,36);ctx.quadraticCurveTo(-26,-6,0,-18);ctx.quadraticCurveTo(26,-6,22,36);ctx.closePath();ctx.fill();ctx.stroke();
+  // horns
+  ctx.beginPath();ctx.moveTo(-14,-16);ctx.lineTo(-26,-38);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(14,-16);ctx.lineTo(26,-38);ctx.stroke();
+  // eyes
+  ctx.fillStyle=c;ctx.beginPath();ctx.arc(-7,-6,2.4,0,7);ctx.fill();ctx.beginPath();ctx.arc(7,-6,2.4,0,7);ctx.fill();
+  ctx.restore();
+}
+function drawFallen(f){ctx.save();ctx.translate(f.x,f.y);ctx.strokeStyle="#ff7a59";ctx.lineWidth=1.6;ctx.globalAlpha=0.85;
+  // a fallen warrior: prone body + broken banner
+  ctx.beginPath();ctx.moveTo(-12,6);ctx.lineTo(10,10);ctx.stroke();
+  ctx.beginPath();ctx.arc(-14,4,4,0,7);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(6,10);ctx.lineTo(8,-8);ctx.stroke();// broken banner pole
+  ctx.globalAlpha=1;ctx.restore();}
+function drawDragon(f,dt){f.grow=Math.min(1,f.grow+dt*1.5);const s=f.grow;ctx.save();ctx.translate(f.x,f.y);ctx.scale(s,s);
+  ctx.strokeStyle="#e6c870";ctx.fillStyle="#0a0e14";ctx.lineWidth=2.2;
+  // coiling dragon body
+  ctx.beginPath();ctx.moveTo(-28,18);ctx.bezierCurveTo(-10,24,14,8,22,-14);ctx.bezierCurveTo(26,-26,8,-30,2,-18);ctx.stroke();
+  // head
+  ctx.beginPath();ctx.moveTo(-28,18);ctx.lineTo(-40,12);ctx.lineTo(-34,24);ctx.closePath();ctx.fill();ctx.stroke();
+  // horn + eye
+  ctx.beginPath();ctx.moveTo(-34,12);ctx.lineTo(-40,2);ctx.stroke();
+  ctx.fillStyle="#e6c870";ctx.beginPath();ctx.arc(-32,16,1.6,0,7);ctx.fill();
+  // mane spikes
+  for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(-20+i*10,16-i*6);ctx.lineTo(-16+i*10,8-i*6);ctx.stroke();}
+  ctx.restore();}
+function frame(ts){if(!W||!H)resize();if(!lastTs)lastTs=ts;const dt=Math.min(0.05,(ts-lastTs)/1000);lastTs=ts;
   if(running){clock+=dt;while(idx<EVENTS.length&&EVENTS[idx].t<=clock){play(EVENTS[idx]);idx++;}
     if(idx>=EVENTS.length&&particles.length===0&&bolts.length===0)running=false;}
   ctx.clearRect(0,0,W,H);
@@ -150,7 +201,8 @@ function frame(ts){if(!lastTs)lastTs=ts;const dt=Math.min(0.05,(ts-lastTs)/1000)
   const y0=H*0.84,x0=W*0.1,x1=W*0.9,g=ctx.createLinearGradient(x0,0,x1,0);g.addColorStop(0,"#6ee7ff");g.addColorStop(1,"#ff7a59");
   ctx.strokeStyle=g;ctx.globalAlpha=.45;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y0);ctx.stroke();ctx.globalAlpha=1;
   for(const m of markers){m.r=Math.min(4,m.r+dt*16);const mx=x0+(m.t/span)*(x1-x0);ctx.fillStyle=m.color;ctx.beginPath();ctx.arc(mx,y0,m.r,0,7);ctx.fill();}
-  god(godA(),"#6ee7ff","A");god(godE(),"#ff7a59","E");
+  general(godA(),"#6ee7ff");adversary(godE(),"#ff7a59");
+  for(const f of figures){if(f.type==="fallen")drawFallen(f);else if(f.type==="dragon")drawDragon(f,dt);}
   for(let i=bolts.length-1;i>=0;i--){const b=bolts[i];b.life-=dt*4;if(b.life<=0){bolts.splice(i,1);continue;}
     ctx.strokeStyle=b.color;ctx.globalAlpha=Math.max(0,b.life);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(b.from.x,b.from.y);
     const mx=(b.from.x+b.to.x)/2+(Math.random()*8-4),my=(b.from.y+b.to.y)/2+(Math.random()*8-4);ctx.quadraticCurveTo(mx,my,b.to.x,b.to.y);ctx.stroke();ctx.globalAlpha=1;}
@@ -159,7 +211,9 @@ function frame(ts){if(!lastTs)lastTs=ts;const dt=Math.min(0.05,(ts-lastTs)/1000)
   for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.life-=dt*1.5;p.vy+=dt*30;p.x+=p.vx*dt;p.y+=p.vy*dt;
     if(p.life<=0){particles.splice(i,1);continue;}ctx.fillStyle=p.color;ctx.globalAlpha=Math.max(0,p.life);ctx.fillRect(p.x,p.y,p.size,p.size);ctx.globalAlpha=1;}
   requestAnimationFrame(frame);}
-document.getElementById("replay").onclick=()=>{idx=0;clock=0;hpA=100;hpE=100;particles=[];bolts=[];rings=[];markers=[];running=true;lastTs=0;};
+document.getElementById("replay").onclick=()=>{idx=0;clock=0;hpA=100;hpE=100;particles=[];bolts=[];rings=[];markers=[];figures=[];running=true;lastTs=0;};
+window.addEventListener("load",resize);
+setTimeout(resize,50);
 resize();requestAnimationFrame(frame);
 </script></body></html>"""
 
