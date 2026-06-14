@@ -8,7 +8,7 @@ sdk_version: "6.16.0"
 python_version: "3.12"
 app_file: app.py
 pinned: false
-short_description: Turn a coding session into a skill, a recap, and a living shell.
+short_description: Turn a coding session into a skill, recap, and shell.
 tags:
   - hackathon
   - build-small-hackathon
