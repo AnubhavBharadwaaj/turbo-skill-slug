@@ -478,7 +478,9 @@ def _extract_via_modal(transcript: str) -> dict[str, Any] | None:
         if guarded:
             payload["slug_voice"] = guarded
             dropped = len(raw_lines) - len(guarded)
-            _vlog("VOICE_OK", f"{len(guarded)} lines kept"
+            used = min(5, len(guarded))  # _validate_slug_voice caps to 5 downstream
+            _vlog("VOICE_OK", f"{used} lines used"
+                              + (f" ({len(guarded)} survived guard, capped to 5)" if len(guarded) > 5 else "")
                               + (f", {dropped} dropped as tallies" if dropped else ""))
         else:
             _vlog("VOICE_ALL_TALLIES", f"all {len(raw_lines)} voice lines were tallies, dropped")
@@ -516,6 +518,26 @@ def _extract_via_fallback(transcript: str) -> dict[str, Any]:
     payload = _extract_json_object(_message_content(response))
     if payload is None:
         raise ValueError("Fallback model did not return parseable JSON.")
+    # Trace the fallback's voice like the primary path. The 7B emits slug_voice
+    # in its JSON; guard tallies and report how many survive (capped to 5 later).
+    fb_voice = payload.get("slug_voice")
+    if isinstance(fb_voice, list) and fb_voice:
+        guarded = _guard_slug_voice([str(u).strip() for u in fb_voice if str(u).strip()])
+        if guarded:
+            payload["slug_voice"] = guarded
+            _vlog("FALLBACK_VOICE_OK", f"{min(5, len(guarded))} lines used from 7B")
+        else:
+            _vlog("FALLBACK_VOICE_ALL_TALLIES", "7B voice lines all dropped as tallies")
+    else:
+        _vlog("FALLBACK_VOICE_EMPTY", "7B returned no slug_voice")
+    # Safety net here too: if voice ended up empty, derive from extraction.
+    if not _guard_slug_voice(
+        [str(u).strip() for u in (payload.get("slug_voice") or []) if str(u).strip()]
+    ):
+        derived = _voice_from_extraction(payload)
+        if derived:
+            payload["slug_voice"] = derived
+            _vlog("NET_FROM_EXTRACTION", f"{len(derived)} deterministic lines (fallback path)")
     return payload
 
 
