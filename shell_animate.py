@@ -139,9 +139,17 @@ REPLAY_HTML = """
   function restart(){
     var svg = document.querySelector('svg');
     if(!svg) return;
-    try { svg.setCurrentTime(0); } catch(e){}
-    var anims = svg.querySelectorAll('animate, animateTransform, animateMotion, set');
-    anims.forEach(function(a){ try { a.beginElement(); } catch(e){} });
+    // Rewind the whole SVG timeline. For begin="0s" animations this re-runs
+    // them from the top. We pause, seek to 0, then unpause so the flipbook
+    // (stage opacity keyframes) and the curl motion both restart cleanly.
+    try {
+      svg.pauseAnimations();
+      svg.setCurrentTime(0);
+      svg.unpauseAnimations();
+    } catch(e){
+      // fallback: plain rewind
+      try { svg.setCurrentTime(0); } catch(e2){}
+    }
   }
   var btn = document.getElementById('replay-birth');
   if(btn){ btn.addEventListener('click', restart); }

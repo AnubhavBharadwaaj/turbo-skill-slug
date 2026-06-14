@@ -79,22 +79,33 @@ def build_unroll_doc(stage_svgs: list[str]) -> str:
     # show one at a time. The sky is identical so no flicker on the backdrop.
     layers = []
     for i, s in enumerate(stage_svgs):
-        begin = i * slot
         content = inner(s)
-        if i < n - 1:
-            # visible during its slot only
-            anim = (
-                f'<set attributeName="opacity" to="1" begin="{begin:.2f}s"/>'
-                f'<set attributeName="opacity" to="0" begin="{begin+slot:.2f}s"/>'
-            )
-            start_op = "1" if i == 0 else "0"
+        # Each stage is visible only during its own [begin, begin+slot) window.
+        # We drive this with a SINGLE <animate> using values/keyTimes over the
+        # whole duration, so it resets cleanly on replay (setCurrentTime(0)).
+        on_t = i / n
+        off_t = (i + 1) / n
+        if i == n - 1:
+            # final stage: turn on at its start and STAY on (freeze full shell)
+            if on_t <= 0:
+                vals, keys = "1;1", "0;1"
+            else:
+                vals = "0;0;1;1"
+                keys = f"0;{on_t:.4f};{on_t:.4f};1"
+        elif i == 0:
+            # first stage: on from 0, off at off_t
+            vals = "1;1;0;0"
+            keys = f"0;{off_t:.4f};{off_t:.4f};1"
         else:
-            # final stage: appears and freezes
-            anim = f'<set attributeName="opacity" to="1" begin="{begin:.2f}s"/>'
-            start_op = "0"
-        layers.append(
-            f'<g opacity="{start_op}">{anim}{content}</g>'
+            # middle stage: off, on at on_t, off at off_t, off after
+            vals = "0;0;1;1;0;0"
+            keys = f"0;{on_t:.4f};{on_t:.4f};{off_t:.4f};{off_t:.4f};1"
+        anim = (
+            f'<animate attributeName="opacity" values="{vals}" keyTimes="{keys}" '
+            f'dur="{UNROLL_DUR}s" begin="0s" fill="freeze" calcMode="discrete"/>'
         )
+        start_op = "1" if i == 0 else "0"
+        layers.append(f'<g opacity="{start_op}">{anim}{content}</g>')
 
     # the 3D curl rides the centerline path of the FINAL stage (full spiral),
     # via animateMotion, shrinking over the unroll, vanishing at the end.
