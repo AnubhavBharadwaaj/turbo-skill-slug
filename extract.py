@@ -334,7 +334,10 @@ def _call_dual(transcript: str, mode: str, timeout: int = 180) -> dict[str, Any]
         resp = urllib.request.urlopen(req, timeout=timeout)
         return json.loads(resp.read())
     except Exception as e:
-        print(f"Modal dual endpoint ({mode}) failed: {e}")
+        # Surfaced by _vlog's VOICE_DOWN/EXTRACT_DOWN cases; this line gives the
+        # underlying reason (timeout / connection refused = container stopped /
+        # HTTP error). If you see this for 'voice', restart slug-dual-serve.
+        print(f"[DUAL] {mode} call failed: {type(e).__name__}: {e}")
         return None
 
 
@@ -386,14 +389,76 @@ def _guard_slug_voice(lines: list[str]) -> list[str]:
     return [ln for ln in lines if not _voice_line_recites_tally(ln)]
 
 
+def _voice_from_extraction(payload: dict[str, Any]) -> list[str]:
+    """Deterministic slug-voice lines built from the structured extraction.
+
+    Used only as a SAFETY NET when the voice adapter is unavailable and the
+    extraction payload carries no usable slug_voice. It keeps the recap from
+    degrading to five identical placeholders. These lines describe witnessed
+    moments (never tallies), so they pass the same guard as the model voice.
+    """
+    lines: list[str] = []
+    themes = payload.get("themes") or []
+    approaches = payload.get("approaches_tried") or []
+    dead_ends = payload.get("dead_ends") or []
+    breakthroughs = payload.get("breakthroughs") or []
+    arc = payload.get("sentiment_arc") or {}
+
+    if themes:
+        lines.append(f"You sat with a {', '.join(themes[:2])} problem, turning it over.")
+    if approaches:
+        a = approaches[0]
+        ap = a.get("approach") if isinstance(a, dict) else None
+        if ap:
+            lines.append(f"You reached for {ap}, and watched where it led.")
+    if dead_ends:
+        d = dead_ends[0]
+        what = d.get("what_happened") if isinstance(d, dict) else None
+        if what:
+            lines.append(f"It stalled when {str(what).rstrip('.').lower()}.")
+        else:
+            lines.append("You hit a wall and had to back out of it.")
+    if breakthroughs:
+        b = breakthroughs[-1]
+        w = b.get("what_worked") if isinstance(b, dict) else None
+        if w:
+            lines.append(f"Then it gave way: {str(w).rstrip('.').lower()}.")
+    start, end = arc.get("start"), arc.get("end")
+    if start and end:
+        lines.append(f"You went in {start} and came out {end}.")
+
+    # keep only guarded, non-empty lines; this never invents counts
+    lines = _guard_slug_voice([ln for ln in lines if ln and ln.strip()])
+    return lines[:5]
+
+
+def _vlog(case: str, detail: str = "") -> None:
+    """Structured diagnostic for the slug-voice path. Every outcome is logged with
+    a stable [VOICE] tag and an explicit CASE so the Space logs name exactly what
+    happened — no guessing from a placeholder recap.
+
+    Cases (search the Space logs for '[VOICE]'):
+      EXTRACT_DOWN       extract endpoint returned nothing -> whole modal path fails
+      VOICE_DOWN         voice endpoint call returned None (timeout/stopped/error)
+      VOICE_EMPTY        voice endpoint replied but slug_voice was empty/not a list
+      VOICE_ALL_TALLIES  voice lines were all dropped by the tally guard
+      VOICE_OK           voice adapter lines used (N kept)
+      NET_FROM_EXTRACTION deterministic fallback built from the extraction (N lines)
+      NET_FAILED         even the deterministic fallback produced nothing -> padding
+    """
+    print(f"[VOICE] {case}" + (f" :: {detail}" if detail else ""))
+
+
 def _extract_via_modal(transcript: str) -> dict[str, Any] | None:
     """Primary path: extraction LoRA for the JSON, voice LoRA for slug_voice."""
     extract_resp = _call_dual(transcript, "extract")
     if not extract_resp or "extraction_raw" not in extract_resp:
+        _vlog("EXTRACT_DOWN", "extract endpoint returned no extraction_raw")
         return None
 
     payload = _extract_json_object(extract_resp["extraction_raw"])
     if not payload:
+        _vlog("EXTRACT_DOWN", "extraction_raw did not parse to JSON")
         return None
 
     # Override slug_voice with the dedicated voice adapter's output.
@@ -401,17 +466,44 @@ def _extract_via_modal(transcript: str) -> dict[str, Any] | None:
     # not tallies (the footer is what makes it invent contradictory numbers).
     voice_input = _strip_count_summary(transcript)
     voice_resp = _call_dual(voice_input, "voice")
-    if voice_resp and isinstance(voice_resp.get("slug_voice"), list):
-        guarded = _guard_slug_voice(voice_resp["slug_voice"])
-        if guarded:  # only use voice output if at least one line survives
+
+    if voice_resp is None:
+        # _call_dual already printed the underlying exception; tag the case.
+        _vlog("VOICE_DOWN", "voice endpoint call returned None (see preceding error)")
+    elif not isinstance(voice_resp.get("slug_voice"), list) or not voice_resp.get("slug_voice"):
+        _vlog("VOICE_EMPTY", f"voice reply had no usable slug_voice list: keys={list(voice_resp.keys())}")
+    else:
+        raw_lines = voice_resp["slug_voice"]
+        guarded = _guard_slug_voice(raw_lines)
+        if guarded:
             payload["slug_voice"] = guarded
+            dropped = len(raw_lines) - len(guarded)
+            _vlog("VOICE_OK", f"{len(guarded)} lines kept"
+                              + (f", {dropped} dropped as tallies" if dropped else ""))
+        else:
+            _vlog("VOICE_ALL_TALLIES", f"all {len(raw_lines)} voice lines were tallies, dropped")
+
+    # SAFETY NET: if after all that slug_voice is empty/missing (voice adapter
+    # was down, and the extract adapter emitted no usable voice), build voice
+    # from the structured extraction so the recap is never five identical
+    # "could not find the words" placeholders.
+    existing = _guard_slug_voice(
+        [str(u).strip() for u in (payload.get("slug_voice") or []) if str(u).strip()]
+    )
+    if not existing:
+        derived = _voice_from_extraction(payload)
+        if derived:
+            payload["slug_voice"] = derived
+            _vlog("NET_FROM_EXTRACTION", f"{len(derived)} deterministic lines built from extraction")
+        else:
+            _vlog("NET_FAILED", "extraction too sparse to derive voice -> recap will show placeholders")
 
     return payload
 
 
 def _extract_via_fallback(transcript: str) -> dict[str, Any]:
     """Fallback only: Qwen-7B via HF Inference. Used when Modal is unavailable."""
-    print("Falling back to Qwen-7B via HF Inference (Modal endpoint unavailable)")
+    print("[FALLBACK] Modal primary path unavailable -> Qwen-7B via HF Inference")
     client = InferenceClient(token=os.environ.get(HF_TOKEN_ENV_VAR))
     response = client.chat.completions.create(
         model=MODEL_NAME,

@@ -37,6 +37,35 @@ TTS_URL = os.environ.get(
 )
 
 
+
+def _base_url_from_request(request) -> str:
+    """Reconstruct the app's public base URL (with trailing /) from a gr.Request.
+
+    On HF Spaces the app sits behind a reverse proxy, so the real public host is
+    in x-forwarded-host (not request.url's internal host). We prefer the
+    forwarded headers and fall back to request.headers['host'] / request.url.
+    """
+    try:
+        headers = {k.lower(): v for k, v in dict(request.headers).items()}
+    except Exception:
+        headers = {}
+    host = headers.get("x-forwarded-host") or headers.get("host")
+    proto = headers.get("x-forwarded-proto") or "https"
+    if host:
+        return f"{proto}://{host}/"
+    # last-resort fallback to the request URL's origin
+    try:
+        u = str(request.url)
+        # strip any path/query
+        from urllib.parse import urlparse
+        p = urlparse(u)
+        if p.scheme and p.netloc:
+            return f"{p.scheme}://{p.netloc}/"
+    except Exception:
+        pass
+    return "/"
+
+
 def _speak_recap(slug_lines: list[str]) -> str | None:
     """Convert slug recap to speech via Chatterbox on Modal."""
     try:
@@ -418,16 +447,24 @@ def build_interface() -> gr.Blocks:
         )
 
         # ---- Stage B: save the current shell to the shared terrarium ----
-        def _keep_shell(svg, extraction):
+        def _keep_shell(svg, extraction, request: gr.Request):
             if not svg or not extraction:
                 return gr.update(value="*No shell to keep yet.*")
             sid = save_shell(svg, extraction)
-            if sid:
-                return gr.update(
-                    value=f"*Kept in the terrarium. Permalink: "
-                          f"`?shell={sid}` — share it, or open the gallery tab.*"
+            if not sid:
+                return gr.update(value="*The terrarium was unreachable; shell not saved.*")
+            # Build a COMPLETE clickable link (not a bare ?shell= fragment, which
+            # is confusing). Derive the base URL from the request's headers.
+            base = _base_url_from_request(request)
+            link = f"{base}?shell={sid}"
+            return gr.update(
+                value=(
+                    f"🐚 **Kept in the terrarium.** Here's the shareable link to "
+                    f"this exact shell:\n\n[{link}]({link})\n\n"
+                    f"_Anyone who opens it sees this shell unroll. You can also "
+                    f"browse all kept shells in the terrarium below._"
                 )
-            return gr.update(value="*The terrarium was unreachable; shell not saved.*")
+            )
 
         keep_button.click(
             fn=_keep_shell,
@@ -436,11 +473,12 @@ def build_interface() -> gr.Blocks:
         )
 
         # ---- Stage C: the shared gallery (a living terrarium of kept shells) ----
-        def _render_gallery():
+        def _render_gallery(request: gr.Request):
             shells = list_shells(limit=60)
             if not shells:
                 return ("*The terrarium is empty so far. Grow a shell and keep it "
                         "to be the first.*")
+            base = _base_url_from_request(request)
             # build a responsive grid of shells; each loads its SVG by id
             cards = []
             for e in shells:
@@ -457,12 +495,15 @@ def build_interface() -> gr.Blocks:
                 # are kept shells, like photos in an album — the replay belongs
                 # to the focused permalink view below).
                 frame = _wrap_iframe(svg, height=240, replay=False)
+                link = f"{base}?shell={sid}"
                 cards.append(
                     f'<div style="flex:0 0 250px;margin:8px;text-align:center;">'
                     f'<div style="font:600 13px Georgia,serif;color:#c8a24c;">{title}</div>'
                     f'<div style="font:11px monospace;color:#999;margin-bottom:4px;">{sub}</div>'
                     f'{frame}'
-                    f'<div style="font:10px monospace;color:#777;">?shell={sid}</div>'
+                    f'<div style="margin-top:4px;"><a href="{link}" target="_blank" '
+                    f'style="font:12px Georgia,serif;color:#6ee7ff;text-decoration:none;">'
+                    f'open this shell →</a></div>'
                     f'</div>'
                 )
             grid = (
