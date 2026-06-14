@@ -19,6 +19,8 @@ from receipt import generate_receipt_svg
 from shell import generate_shell_svg
 from shell_animate import wrap_in_iframe
 from shell_unroll import build_unroll_doc, N_STAGES
+from gallery_client import save_shell, list_shells, get_shell
+from shell_animate import wrap_in_iframe as _wrap_iframe
 from transcribe import transcribe_audio
 from trace_parser import parse_trace_to_transcript, detect_trace_format
 
@@ -102,8 +104,8 @@ def on_audio_change(audio: str | None):
 
 
 def _empty_outputs(message: str):
-    """Ten-tuple matching the output components, for early/error yields."""
-    return (message, "", "", "", "", None, None, None, None, None)
+    """Twelve-tuple matching the output components, for early/error yields."""
+    return (message, "", "", "", "", None, None, None, None, None, None, None)
 
 
 def _finalize_outputs(transcript_display: str, extraction: dict, slug_audio_path):
@@ -151,6 +153,8 @@ def _finalize_outputs(transcript_display: str, extraction: dict, slug_audio_path
         str(receipt_path),
         str(skill_path),
         str(recap_path),
+        shell_svg,        # static SVG, for the "keep this shell" gallery save
+        extraction,       # metadata, for the gallery entry
     )
 
 
@@ -163,7 +167,7 @@ def _grow_shell_stages(extraction: dict, transcript_display: str):
     yield (
         "*The slug is shaping your shell...*",
         "*the shell is coming into being...*",
-        "", "", "", None, None, None, None, None,
+        "", "", "", None, None, None, None, None, None, None,
     )
 
 
@@ -296,6 +300,10 @@ def build_interface() -> gr.Blocks:
         # ---- EVERYTHING ELSE, hidden until the shell finishes ----
         with gr.Group(visible=False) as gifts_group:
             gr.Markdown("### the slug's other gifts")
+            with gr.Row():
+                keep_button = gr.Button("🐚 keep this shell in the terrarium",
+                                        variant="secondary")
+                keep_status = gr.Markdown("")
             recap_output = gr.Markdown(label="slug recap")
             slug_audio = gr.Audio(label="the slug speaks", type="filepath")
             receipt_output = gr.HTML(label="your receipt")
@@ -307,6 +315,11 @@ def build_interface() -> gr.Blocks:
                 skill_download = gr.File(label="skill.md")
                 recap_download = gr.File(label="slug_recap.txt")
 
+        # State holders for the current shell (static SVG + extraction), so the
+        # "keep this shell" button can save it to the shared gallery.
+        cur_shell_svg = gr.State(None)
+        cur_extraction = gr.State(None)
+
         # Enable the button only once audio is actually present
         audio_input.change(
             fn=on_audio_change,
@@ -314,7 +327,7 @@ def build_interface() -> gr.Blocks:
             outputs=[submit_button, status_line],
         )
 
-        # The 10 pipeline outputs (shell + the 9 inside the gifts group)
+        # The 12 pipeline outputs (10 UI + 2 state for the gallery save)
         pipeline_outputs = [
             transcript_output,
             recap_output,
@@ -326,6 +339,8 @@ def build_interface() -> gr.Blocks:
             receipt_download,
             skill_download,
             recap_download,
+            cur_shell_svg,
+            cur_extraction,
         ]
 
         def _hide_gifts():
@@ -373,6 +388,85 @@ def build_interface() -> gr.Blocks:
             inputs=None,
             outputs=[gifts_group, submit_button, status_line],
         )
+
+        # ---- Stage B: save the current shell to the shared terrarium ----
+        def _keep_shell(svg, extraction):
+            if not svg or not extraction:
+                return gr.update(value="*No shell to keep yet.*")
+            sid = save_shell(svg, extraction)
+            if sid:
+                return gr.update(
+                    value=f"*Kept in the terrarium. Permalink: "
+                          f"`?shell={sid}` — share it, or open the gallery tab.*"
+                )
+            return gr.update(value="*The terrarium was unreachable; shell not saved.*")
+
+        keep_button.click(
+            fn=_keep_shell,
+            inputs=[cur_shell_svg, cur_extraction],
+            outputs=[keep_status],
+        )
+
+        # ---- Stage C: the shared gallery (a living terrarium of kept shells) ----
+        def _render_gallery():
+            shells = list_shells(limit=60)
+            if not shells:
+                return ("*The terrarium is empty so far. Grow a shell and keep it "
+                        "to be the first.*")
+            # build a responsive grid of shells; each loads its SVG by id
+            cards = []
+            for e in shells:
+                sid = e.get("id")
+                title = e.get("title") or "a session"
+                dur = e.get("duration")
+                arc = f"{e.get('start','?')} → {e.get('end','?')}"
+                sub = f"{dur}m · {arc}" if dur else arc
+                data = get_shell(sid) if sid else None
+                svg = (data or {}).get("svg", "")
+                if not svg:
+                    continue
+                # shrink each shell into a card via the iframe wrapper (static)
+                frame = _wrap_iframe(svg, height=240)
+                cards.append(
+                    f'<div style="flex:0 0 250px;margin:8px;text-align:center;">'
+                    f'<div style="font:600 13px Georgia,serif;color:#c8a24c;">{title}</div>'
+                    f'<div style="font:11px monospace;color:#999;margin-bottom:4px;">{sub}</div>'
+                    f'{frame}'
+                    f'<div style="font:10px monospace;color:#777;">?shell={sid}</div>'
+                    f'</div>'
+                )
+            grid = (
+                '<div style="display:flex;flex-wrap:wrap;justify-content:center;">'
+                + "".join(cards) + "</div>"
+            )
+            return grid
+
+        def _load_permalink(request: gr.Request):
+            """If the URL has ?shell=<id>, load that single shell on page open."""
+            try:
+                sid = dict(request.query_params).get("shell")
+            except Exception:
+                sid = None
+            if not sid:
+                return gr.update()
+            data = get_shell(sid)
+            if not data or not data.get("svg"):
+                return gr.update(value="*That shell could not be found in the terrarium.*")
+            return gr.update(value=_wrap_iframe(data["svg"], height=520))
+
+        with gr.Accordion("🌿 the terrarium (shared gallery)", open=False):
+            gr.Markdown(
+                "A shared collection of shells people have kept. Each one is the "
+                "fingerprint of a real session. Open `?shell=<id>` to link a "
+                "specific shell."
+            )
+            permalink_view = gr.HTML()
+            refresh_gallery = gr.Button("↻ refresh the terrarium")
+            gallery_grid = gr.HTML()
+            refresh_gallery.click(fn=_render_gallery, inputs=None, outputs=[gallery_grid])
+            # populate on load + handle ?shell= permalink
+            demo.load(fn=_render_gallery, inputs=None, outputs=[gallery_grid])
+            demo.load(fn=_load_permalink, inputs=None, outputs=[permalink_view])
 
     return demo
 
