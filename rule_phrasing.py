@@ -68,8 +68,15 @@ def to_negative_constraint(gotcha: str) -> str:
 
     # Build a guardrail. If we have a cause, use "Avoid …; otherwise/ because …".
     # If not, we frame as a caution without fabricating a reason.
+    # Pick a guardrail frame that doesn't collide with the gotcha's own wording.
+    wl = what.lower()
+    already = any(k in wl for k in ("assume", "assumes", "always", "is guaranteed"))
     if why:
+        if already:
+            return f"Do not rely on the assumption that {what} — {why}."
         return f"Avoid assuming {what} holds by default — {why}."
+    if already:
+        return f"Do not rely on the assumption that {what}; verify it explicitly."
     return f"Watch out: {what} is not guaranteed; verify it rather than assuming it."
 
 

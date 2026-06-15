@@ -120,11 +120,25 @@ def _gotchas_block(extraction: dict) -> str:
         "easy to get wrong and costly to rediscover. Check each one before "
         "assuming the obvious approach is safe:\n"
     ]
+    # Phase 1 (RuleShaping arXiv:2604.11088): under each gotcha, emit a negative,
+    # preferably state-dependent guardrail — the only individually beneficial rule
+    # type. Deterministic + content-preserving (never fabricates a cause), so this
+    # adds zero model calls and cannot invent anything not in the gotcha.
+    try:
+        from rule_phrasing import to_negative_constraint, is_negative_constraint
+    except Exception:
+        to_negative_constraint = None
+        is_negative_constraint = None
     for g in gotchas:
         g = str(g).strip().rstrip(".")
         if not g:
             continue
         lines.append(f"- {g}.")
+        if to_negative_constraint is not None:
+            rule = to_negative_constraint(g)
+            if (rule and rule.rstrip(".").lower() != g.lower()
+                    and is_negative_constraint(rule)):
+                lines.append(f"  - **Guardrail:** {rule}")
     return "\n".join(lines)
 
 
