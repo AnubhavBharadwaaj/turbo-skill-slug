@@ -60,10 +60,10 @@ shell.
 So the slug detects the session's genre (debugging, exploration, authoring,
 feature, refactor, setup) and witnesses the right thing for each:
 
-- debugging -> the struggle: dead ends and the breakthrough
-- exploration -> the discoveries: the non-obvious facts learned about the codebase
-- authoring -> the decisions, and the false assumptions caught before they became wrong docs
-- feature / refactor / setup -> what was built or changed, and what would break if done naively
+- debugging → the struggle: dead ends and the breakthrough
+- exploration → the discoveries: the non-obvious facts learned about the codebase
+- authoring → the decisions, and the false assumptions caught before they became wrong docs
+- feature / refactor / setup → what was built or changed, and what would break if done naively
 
 The shell's vocabulary adapts with it: for an exploration session the rim jewels
 are discoveries, the aperture is the clearest insight. Genre detection is pure
@@ -91,6 +91,10 @@ feed their own agent logs and watch the slug read them.
 ## Demo
 
 Watch the demo: **[youtu.be/qSP9olWRv7o](https://youtu.be/qSP9olWRv7o)**
+
+## Social
+
+The launch post: **[x.com/anubhav27071997](https://x.com/anubhav27071997/status/2063970171010826540)**
 
 ## Why this is hard the right way
 
@@ -133,6 +137,10 @@ without it. A summary does not. So the SKILL.md is built to carry the
 - **What does NOT work, and why**, so the model skips the dead ends you already
   paid for.
 - **Transferable principles** distilled from the arc, not a diary of the session.
+- **A negative guardrail under each gotcha**, phrased as a "do not X / verify Y
+  before assuming" rule. This follows the 2026 RuleShaping finding that negative,
+  state-dependent guardrails are the rule type that actually helps a model, and
+  it is generated deterministically with no model call.
 
 Terse gotchas are expanded by an optional one-shot pass, guarded so example
 phrasing can never leak into output.
@@ -193,15 +201,16 @@ switched per request, so the whole language pipeline runs on one GPU.
 1. **Fine-tuning.** Both LoRAs trained on Modal (A10G). SlugExtract on a pure
    transformers + PEFT + bitsandbytes stack.
 2. **Serving.** Whisper on a T4; both LoRAs on a single shared T4 via PEFT
-   multi-adapter, switched per request. One warm container for demo reliability.
+   multi-adapter, switched per request. Kept-warm containers (one always-on plus
+   a buffer) for demo reliability.
 3. **TTS.** Chatterbox on an A10G speaks the recap.
 4. **Evaluation.** The groundedness eval (three models, 25 transcripts, two
    metrics) runs as a Modal job, persisting raw generations to a Volume.
 5. **Gallery.** The shared terrarium's save/list/fetch endpoints run on Modal,
    backed by the same Volume.
 
-If a Modal endpoint is briefly unavailable, the app falls back gracefully and
-still returns a result.
+If the primary extraction misses, the app retries on the same small model and
+otherwise degrades to a clear message, so it never crashes mid-render.
 
 ## Built with OpenAI Codex
 
@@ -228,9 +237,11 @@ size.
 reciting tallies, so it can never state a number that contradicts the record. The
 slug describes moments; the receipt does arithmetic.
 
-**Graceful fallback everywhere.** Cold Modal endpoint → HF Inference. Unexpected
-sentiment → closest valid label. Animation fails → the full shell still shows
-(nothing is hard-hidden). Nothing crashes on edge cases.
+**Graceful degradation everywhere.** If the primary Modal extraction misses, the
+app retries once on the same small model, then shows a clear "try again" message
+rather than crashing. Unexpected sentiment → closest valid label. Animation fails
+→ the full shell still shows (nothing is hard-hidden). Nothing crashes on edge
+cases.
 
 ## Hackathon patches
 
@@ -306,6 +317,7 @@ where the slug goes next, not a claim about the current Space.
 - **SlugExtract LoRA:** [slugextract-qwen2.5-1.5b-lora](https://huggingface.co/legendarydragontamer/slugextract-qwen2.5-1.5b-lora)
 - **Groundedness eval:** [turboskillslug-groundedness-eval](https://huggingface.co/datasets/legendarydragontamer/turboskillslug-groundedness-eval)
 - **Demo:** [youtu.be/qSP9olWRv7o](https://youtu.be/qSP9olWRv7o)
+- **Social post:** [x.com/anubhav27071997](https://x.com/anubhav27071997/status/2063970171010826540)
 - **Blog:** [turboskillslug-shell-from-session](https://huggingface.co/blog/build-small-hackathon/turboskillslug-shell-from-session)
 
 ---
