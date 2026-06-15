@@ -3,6 +3,7 @@ git checkout --orphan hf-deploy
 git add -A
 git rm -r --cached --ignore-unmatch \
   sample_session.wav \
+  research \
   swe_chat_traces \
   distractor_runs \
   skill_eval_runs \
