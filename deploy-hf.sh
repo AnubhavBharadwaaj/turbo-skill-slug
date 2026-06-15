@@ -19,11 +19,14 @@ git rm -r --cached --ignore-unmatch \
 git commit -m "deploy"
 git push hf hf-deploy:main --force
 git push org hf-deploy:main --force
+HF_DEPLOY_TOKEN=$(git remote get-url hf | sed -E 's#https://[^:]+:([^@]+)@.*#\1#')
 hf upload legendarydragontamer/TurboSkillSlug sample_session.wav sample_session.wav \
   --repo-type=space \
+  --token "$HF_DEPLOY_TOKEN" \
   --commit-message="upload sample session audio"
 hf upload build-small-hackathon/TurboSkillSlug sample_session.wav sample_session.wav \
   --repo-type=space \
+  --token "$HF_DEPLOY_TOKEN" \
   --commit-message="upload sample session audio"
 git checkout main
 git branch -D hf-deploy
