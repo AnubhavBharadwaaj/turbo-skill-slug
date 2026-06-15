@@ -37,6 +37,7 @@ class Shell3DRenderer:
             "turns": scene.shell.turns,
             "growth": scene.shell.growth_curve,
             "knots": scene.shell.knots,
+            "jewels": scene.shell.jewels,
             "aperture": scene.shell.aperture,
             "iridescence": scene.shell.iridescence,
             "palette": scene.shell.palette,
@@ -191,6 +192,28 @@ for(const k of (P.knots||[])){
   s.position.copy(cp); shell.add(s);
 }
 
+// ---- jewels: iridescent beads on the rim at each gotcha position ----
+// gotchas sit "along the rim", so offset each bead outward from the centerline
+// along the local radial direction (from shell center to the curve point).
+const jewelMat = new THREE.MeshPhysicalMaterial({
+  color: accent.clone().lerp(new THREE.Color(0xffffff), 0.35),
+  metalness:0.0, roughness:0.12, clearcoat:1.0, clearcoatRoughness:0.1,
+  iridescence:1.0, iridescenceIOR:1.5, iridescenceThicknessRange:[150,700],
+  envMapIntensity:1.8,
+});
+for(const j of (P.jewels||[])){
+  const cp = curve.getPoint(Math.min(1, j.t));
+  // radial direction in the shell's xy-plane (the spiral grows outward in xy)
+  const radial = new THREE.Vector3(cp.x, cp.y, 0);
+  if(radial.lengthSq() < 1e-6) radial.set(1,0,0); else radial.normalize();
+  const bead = new THREE.Mesh(new THREE.SphereGeometry(0.085,18,18), jewelMat);
+  // local tube radius grows along the arm; push the bead just past the surface
+  const localGrow = 0.12 + 2.4*j.t*j.t;
+  const off = tubeR*localGrow + 0.05;
+  bead.position.copy(cp).addScaledVector(radial, off);
+  shell.add(bead);
+}
+
 // ---- aperture: a glowing sphere at the breakthrough position ----
 const ap = P.aperture||{t:0.95,intensity:0.8};
 const apPos = curve.getPoint(Math.min(1, ap.t));
@@ -218,6 +241,30 @@ addEventListener("pointermove", e=>{ if(!drag)return;
   rotX=Math.max(-1.2,Math.min(1.2,rotX)); px=e.clientX; py=e.clientY; });
 el.addEventListener("wheel", e=>{ dist*=(1+Math.sign(e.deltaY)*0.08);
   dist=Math.max(size*0.5,Math.min(size*3,dist)); e.preventDefault(); }, {passive:false});
+
+// pinch-zoom: two-finger distance drives the same `dist` as the wheel
+let pinchD = 0;
+el.addEventListener("touchstart", e=>{
+  if(e.touches.length===2){
+    const dx=e.touches[0].clientX-e.touches[1].clientX;
+    const dy=e.touches[0].clientY-e.touches[1].clientY;
+    pinchD = Math.hypot(dx,dy);
+    drag = false;            // suppress orbit while pinching
+  }
+}, {passive:false});
+el.addEventListener("touchmove", e=>{
+  if(e.touches.length===2 && pinchD>0){
+    const dx=e.touches[0].clientX-e.touches[1].clientX;
+    const dy=e.touches[0].clientY-e.touches[1].clientY;
+    const d = Math.hypot(dx,dy);
+    const ratio = pinchD / Math.max(1,d);     // fingers apart -> zoom in
+    dist *= ratio;
+    dist = Math.max(size*0.5, Math.min(size*3, dist));
+    pinchD = d;
+    e.preventDefault();
+  }
+}, {passive:false});
+el.addEventListener("touchend", e=>{ if(e.touches.length<2) pinchD=0; });
 
 addEventListener("resize", ()=>{ camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
