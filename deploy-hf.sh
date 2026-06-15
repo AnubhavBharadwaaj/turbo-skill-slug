@@ -14,7 +14,6 @@ git rm -r --cached --ignore-unmatch \
   gotcha_cluster.py \
   session_store.py \
   artifact_meta.py \
-  rule_phrasing.py \
   swe_chat_loader.py
 git commit -m "deploy"
 git push hf hf-deploy:main --force
