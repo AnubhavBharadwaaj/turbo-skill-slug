@@ -174,6 +174,7 @@ Qwen-7B is a labeled fallback only, not on the primary path.
 | Feature extraction | `slugextract-qwen2.5-1.5b-lora` | 1.5B | Modal T4 (shared) |
 | Slug voice | `slugvoice-qwen2.5-1.5b-lora` | 1.5B | Modal T4 (shared) |
 | Spoken recap | Chatterbox TTS | ~300M | Modal A10G |
+| Genre detection | Pattern matching (no model) | 0 | CPU |
 | Shell + Receipt | Procedural SVG (no model) | 0 | CPU |
 | Extraction fallback | `Qwen/Qwen2.5-7B-Instruct` | 7B | HF Inference (fallback only) |
 
