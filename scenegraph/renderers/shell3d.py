@@ -68,7 +68,7 @@ or device did not provide. Try a desktop browser to turn the shell in 3D.</div>
 <div id="hint">drag to orbit · scroll to zoom</div>
 <script type="importmap">
 { "imports": {
-  "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js"
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
 }}
 </script>
 <script type="module">
