@@ -47,7 +47,7 @@ class Shell3DRenderer:
         iframe = (
             f'<iframe srcdoc="{escaped}" '
             f'style="width:100%;height:560px;border:none;border-radius:12px;'
-            f'background:#07090d;" sandbox="allow-scripts"></iframe>'
+            f'background:#07090d;" sandbox="allow-scripts allow-downloads"></iframe>'
         )
         return {"kind": "iframe", "html": iframe, "notes": ""}
 
