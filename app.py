@@ -25,6 +25,12 @@ from shell3d_lens import render_shell_3d
 from shell_animate import wrap_in_iframe as _wrap_iframe
 from transcribe import transcribe_audio
 from trace_parser import parse_trace_to_transcript, detect_trace_format
+from model_guard import APP_RUNTIME
+
+# REQ-01 guard: mark this process as the live app. From here on, any attempt to
+# call an over-32B model (via assert_small_model) will raise instead of shipping
+# a compliance violation. Offline eval/research scripts never enable this flag.
+APP_RUNTIME.enable()
 
 
 # Growth stages for the live shell reveal. The slug grows the shell as it

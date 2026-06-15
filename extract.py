@@ -18,6 +18,8 @@ from typing import Any
 
 from huggingface_hub import InferenceClient
 
+from model_guard import assert_small_model
+
 
 # Modal dual-adapter endpoint (extraction LoRA + voice LoRA on one T4)
 DUAL_URL = os.environ.get(
@@ -231,6 +233,7 @@ def _gotcha_completer(prompt: str) -> str:
     """One-shot text completion used only to enrich terse gotchas. Uses the same
     HF Inference 7B that backs the fallback. Best-effort: any failure leaves the
     gotchas as-is."""
+    assert_small_model(MODEL_NAME)
     client = InferenceClient(token=os.environ.get(HF_TOKEN_ENV_VAR))
     response = client.chat.completions.create(
         model=MODEL_NAME,
@@ -451,6 +454,7 @@ def _vlog(case: str, detail: str = "") -> None:
 
 def _extract_via_modal(transcript: str) -> dict[str, Any] | None:
     """Primary path: extraction LoRA for the JSON, voice LoRA for slug_voice."""
+    assert_small_model("slugextract-qwen2.5-1.5b-lora")
     extract_resp = _call_dual(transcript, "extract")
     if not extract_resp or "extraction_raw" not in extract_resp:
         _vlog("EXTRACT_DOWN", "extract endpoint returned no extraction_raw")
@@ -465,6 +469,7 @@ def _extract_via_modal(transcript: str) -> dict[str, Any] | None:
     # Strip the count-summary footer first so the slug describes moments,
     # not tallies (the footer is what makes it invent contradictory numbers).
     voice_input = _strip_count_summary(transcript)
+    assert_small_model("slugvoice-qwen2.5-1.5b-lora")
     voice_resp = _call_dual(voice_input, "voice")
 
     if voice_resp is None:
@@ -506,6 +511,7 @@ def _extract_via_modal(transcript: str) -> dict[str, Any] | None:
 def _extract_via_fallback(transcript: str) -> dict[str, Any]:
     """Fallback only: Qwen-7B via HF Inference. Used when Modal is unavailable."""
     print("[FALLBACK] Modal primary path unavailable -> Qwen-7B via HF Inference")
+    assert_small_model(MODEL_NAME)
     client = InferenceClient(token=os.environ.get(HF_TOKEN_ENV_VAR))
     response = client.chat.completions.create(
         model=MODEL_NAME,
