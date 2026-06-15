@@ -6,6 +6,7 @@ import base64 as b64lib
 import html
 import json
 import os
+import shutil
 import tempfile
 import time
 import wave
@@ -43,7 +44,28 @@ TTS_URL = os.environ.get(
     "MODAL_TTS_URL",
     "https://anubhavbharadwaaj--slugvoice-tts-slugtts-api.modal.run",
 )
+SAMPLE_WAV_NAME = "sample_session.wav"
+SAMPLE_WAV_PATH = Path(__file__).parent / SAMPLE_WAV_NAME
 
+
+def _resolve_audio_path(audio: str | None) -> str | None:
+    """Return a readable audio path for the pipeline.
+
+    Gradio example uploads can point at evictable temp files on HF Spaces. If the
+    one-click sample's temp copy is gone, recover from the committed repo copy
+    by copying it to a fresh temp file owned by this request.
+    """
+    if audio and os.path.exists(audio):
+        return audio
+
+    looks_like_sample = audio and SAMPLE_WAV_NAME in os.path.basename(audio)
+    if (looks_like_sample or audio is None) and SAMPLE_WAV_PATH.exists():
+        dst = Path(tempfile.mkdtemp(prefix="slug_sample_")) / SAMPLE_WAV_NAME
+        shutil.copy(SAMPLE_WAV_PATH, dst)
+        print(f"[SAMPLE] recovered evicted sample from committed repo copy: {dst}")
+        return str(dst)
+
+    return audio
 
 
 def _base_url_from_request(request) -> str:
@@ -233,19 +255,24 @@ def _grow_shell_stages(extraction: dict, transcript_display: str):
 
 def process_audio(audio: str | None):
     """Transcribe, extract, then GROW the shell live, yielding each stage."""
-    if audio is None:
-        yield _empty_outputs("Give the slug an audio file first.")
+    audio = _resolve_audio_path(audio)
+    if audio is None or not os.path.exists(audio):
+        yield _empty_outputs(
+            "The slug couldn't find that audio file. On HF Spaces an upload can "
+            "expire; please re-upload and try again."
+        )
         return
 
     try:
         transcript = transcribe_audio(audio)
-    except FileNotFoundError:
+        extraction = extract_session(transcript)
+    except Exception as e:
+        print(f"[PIPELINE] audio path failed: {type(e).__name__}: {e}")
         yield _empty_outputs(
-            "The slug couldn't find that audio file. Please re-upload it and try again."
+            "The slug couldn't read this session right now — the extractor is "
+            "temporarily unavailable. Please try again, or use the trace tab."
         )
         return
-
-    extraction = extract_session(transcript)
     slug_audio_path = _speak_recap(extraction.get("slug_voice", []))
 
     audio_minutes = round(_get_audio_duration_minutes(audio), 1)
@@ -328,7 +355,7 @@ def build_interface() -> gr.Blocks:
                             label="your build session",
                         )
                         gr.Examples(
-                            examples=["sample_session.wav"],
+                            examples=[str(SAMPLE_WAV_PATH)],
                             inputs=audio_input,
                             label="or try a sample session",
                         )

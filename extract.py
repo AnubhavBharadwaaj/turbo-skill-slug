@@ -490,14 +490,21 @@ def _extract_via_modal(
 ) -> dict[str, Any] | None:
     """Primary path: extraction LoRA for the JSON, voice LoRA for slug_voice."""
     assert_small_model("slugextract-qwen2.5-1.5b-lora")
-    extract_resp = _call_dual(transcript, "extract", genre=genre, frame=frame)
-    if not extract_resp or "extraction_raw" not in extract_resp:
-        _vlog("EXTRACT_DOWN", "extract endpoint returned no extraction_raw")
-        return None
+    payload = None
+    for attempt in range(2):
+        extract_resp = _call_dual(transcript, "extract", genre=genre, frame=frame)
+        if not extract_resp or "extraction_raw" not in extract_resp:
+            _vlog("EXTRACT_DOWN", "extract endpoint returned no extraction_raw")
+        else:
+            payload = _extract_json_object(extract_resp["extraction_raw"])
+            if payload:
+                break
+            _vlog("EXTRACT_DOWN", "extraction_raw did not parse to JSON")
 
-    payload = _extract_json_object(extract_resp["extraction_raw"])
+        if attempt == 0:
+            _vlog("EXTRACT_RETRY", "retrying Modal extraction once before fallback")
+
     if not payload:
-        _vlog("EXTRACT_DOWN", "extraction_raw did not parse to JSON")
         return None
 
     # Override slug_voice with the dedicated voice adapter's output.

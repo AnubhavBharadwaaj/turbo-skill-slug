@@ -33,3 +33,4 @@ htmlcov/
 .idea/
 .vscode/
 *.wav
+!sample_session.wav
