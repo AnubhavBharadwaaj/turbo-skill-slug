@@ -50,6 +50,31 @@ Then the slug gives you four things:
    breakthrough is a dragon).
 4. **A receipt** like a thermal printout: approaches tried, dead ends, mood.
 
+### The slug witnesses every kind of session, not just debugging
+
+Most coding sessions are not bug hunts. They are exploring an unfamiliar repo,
+writing docs, setting up tooling, building a feature. A witness that only has
+eyes for "what broke and what fixed it" leaves those sessions with a hollow
+shell.
+
+So the slug detects the session's genre (debugging, exploration, authoring,
+feature, refactor, setup) and witnesses the right thing for each:
+
+- debugging -> the struggle: dead ends and the breakthrough
+- exploration -> the discoveries: the non-obvious facts learned about the codebase
+- authoring -> the decisions, and the false assumptions caught before they became wrong docs
+- feature / refactor / setup -> what was built or changed, and what would break if done naively
+
+The shell's vocabulary adapts with it: for an exploration session the rim jewels
+are discoveries, the aperture is the clearest insight. Genre detection is pure
+pattern-matching: no model call, no added latency.
+
+Why this matters concretely: on a real exploration trace, the slug surfaced that
+a project's checkpoint mirror uses a custom git ref namespace
+(`refs/entire/...`) that a standard `git fetch --all` will miss. That is exactly
+the kind of private, non-derivable knowledge a SKILL.md exists to carry, and it
+came from a session that had no "bug" at all.
+
 Every shell is unique because every session is unique.
 
 ## Try it in one click
@@ -225,6 +250,46 @@ Full caveats (parse-rate cost, the eval's 5/6 calibration, the animation
 payload, what is freshly built) are documented in
 [HONEST_SUBMISSION.md](https://github.com/AnubhavBharadwaaj/turbo-skill-slug/blob/main/HONEST_SUBMISSION.md).
 Every model and the eval data are published for anyone to verify.
+
+## Research foundation: from one skill to lifecycle-governed rules
+
+Beyond the shipped app, this project carries an offline-validated research layer
+that answers a sharper question than "can a small model extract a skill": *when
+does an extracted artifact actually help a capable model, and how should many
+sessions compound into durable knowledge?*
+
+This work is validated offline (it is not yet wired into the live Space) and is
+documented and tested in the repo. Stated plainly so the line between shipped and
+researched is clear:
+
+- **When skills help (measured).** A blind, calibrated eval (one model answers,
+  an independent model judges) found that a generated skill gives a frontier
+  model uplift *only* when it carries knowledge that could not be in training
+  data: private behavior, post-cutoff facts, project conventions. General
+  algorithmic skills gave 0.0 uplift; novel/private ones gave real uplift. The
+  dividing line is provenance, not difficulty.
+
+- **Compounding across sessions (built, offline-tested).** A promotion engine,
+  grounded in the 2026 "Experience Compression Spectrum" framing, consolidates
+  gotchas that recur across multiple sessions of the same codebase into compact,
+  guardrail-phrased rules, with provenance, confidence, and a validation gate
+  that demotes rules that stop holding. Rule phrasing follows the "RuleShaping"
+  finding that negative, state-dependent guardrails help where positive
+  directives hurt.
+
+- **Faithful trace distillation (built, offline-tested).** A from-scratch
+  implementation of the 2026 "Trace2Skill" method (validation-gated error
+  analysis, hierarchical prevalent-pattern merging, niche items routed to
+  references) for higher-fidelity extraction.
+
+An honest result from running the extractor on real public agent traces: its
+gotchas are specific and real (it named exact functions, ref namespaces, and
+build-tool quirks), but cross-session promotion only fires within a single
+codebase, because two different repos never share the same private trap. That is
+a true property of the problem, reported rather than hidden.
+
+Full method, code, and tests live in the repo; the research is a foundation for
+where the slug goes next, not a claim about the current Space.
 
 ## What comes next
 

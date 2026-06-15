@@ -19,6 +19,7 @@ from typing import Any
 from huggingface_hub import InferenceClient
 
 from model_guard import assert_small_model
+from session_genre import detect_genre, frame_for, shell_legend
 
 
 # Modal dual-adapter endpoint (extraction LoRA + voice LoRA on one T4)
@@ -55,6 +56,26 @@ REQUIRED_SKILL_MD_SECTIONS = (
     "Gotchas",
     "Tags",
 )
+_USER_TAGS = ("[user]", "[user_message]")
+
+
+def _first_instruction(transcript: str) -> str:
+    """First substantive USER instruction, tag stripped, for genre detection."""
+    for line in transcript.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        low = s.lower()
+        if low.startswith(_USER_TAGS):
+            text = s.split("]", 1)[1].strip() if "]" in s else s
+            if text and not text.startswith(("<", "#", "AGENTS.md instructions")):
+                return text[:500]
+            continue
+        if s.startswith(("[", "<", "#")):
+            continue
+        if len(s) >= 12:
+            return s[:500]
+    return transcript[:400]
 
 # Used only by the 7B fallback path
 SYSTEM_PROMPT = """\
@@ -327,10 +348,20 @@ def _finalize(payload: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def _call_dual(transcript: str, mode: str, timeout: int = 180) -> dict[str, Any] | None:
+def _call_dual(
+    transcript: str,
+    mode: str,
+    timeout: int = 180,
+    genre: str | None = None,
+    frame: str | None = None,
+) -> dict[str, Any] | None:
     """Call the Modal dual-adapter endpoint. Returns parsed JSON or None on failure."""
     try:
-        data = json.dumps({"transcript": transcript, "mode": mode}).encode()
+        body = {"transcript": transcript, "mode": mode}
+        if genre:
+            body["genre"] = genre
+            body["frame"] = frame or ""
+        data = json.dumps(body).encode()
         req = urllib.request.Request(
             DUAL_URL, data=data, headers={"Content-Type": "application/json"}
         )
@@ -452,10 +483,14 @@ def _vlog(case: str, detail: str = "") -> None:
     print(f"[VOICE] {case}" + (f" :: {detail}" if detail else ""))
 
 
-def _extract_via_modal(transcript: str) -> dict[str, Any] | None:
+def _extract_via_modal(
+    transcript: str,
+    genre: str | None = None,
+    frame: str | None = None,
+) -> dict[str, Any] | None:
     """Primary path: extraction LoRA for the JSON, voice LoRA for slug_voice."""
     assert_small_model("slugextract-qwen2.5-1.5b-lora")
-    extract_resp = _call_dual(transcript, "extract")
+    extract_resp = _call_dual(transcript, "extract", genre=genre, frame=frame)
     if not extract_resp or "extraction_raw" not in extract_resp:
         _vlog("EXTRACT_DOWN", "extract endpoint returned no extraction_raw")
         return None
@@ -470,7 +505,7 @@ def _extract_via_modal(transcript: str) -> dict[str, Any] | None:
     # not tallies (the footer is what makes it invent contradictory numbers).
     voice_input = _strip_count_summary(transcript)
     assert_small_model("slugvoice-qwen2.5-1.5b-lora")
-    voice_resp = _call_dual(voice_input, "voice")
+    voice_resp = _call_dual(voice_input, "voice", genre=genre, frame=frame)
 
     if voice_resp is None:
         # _call_dual already printed the underlying exception; tag the case.
@@ -508,15 +543,30 @@ def _extract_via_modal(transcript: str) -> dict[str, Any] | None:
     return payload
 
 
-def _extract_via_fallback(transcript: str) -> dict[str, Any]:
+def _extract_via_fallback(
+    transcript: str,
+    genre: str | None = None,
+    frame: str | None = None,
+) -> dict[str, Any]:
     """Fallback only: Qwen-7B via HF Inference. Used when Modal is unavailable."""
     print("[FALLBACK] Modal primary path unavailable -> Qwen-7B via HF Inference")
     assert_small_model(MODEL_NAME)
+    if not genre:
+        genre = detect_genre(_first_instruction(transcript), transcript)
+    if not frame:
+        frame = frame_for(genre)
+    framed_system = SYSTEM_PROMPT + (
+        f"\n\nSESSION GENRE: {genre}. {frame}\n"
+        "Adapt 'gotchas', 'dead_ends', and 'breakthroughs' to this genre: for a "
+        "non-debugging session, 'gotchas' are the non-obvious DISCOVERIES or "
+        "DECISIONS worth remembering, 'dead_ends' may be empty, and 'breakthroughs' "
+        "is the clearest insight or the delivered artifact."
+    )
     client = InferenceClient(token=os.environ.get(HF_TOKEN_ENV_VAR))
     response = client.chat.completions.create(
         model=MODEL_NAME,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": framed_system},
             {"role": "user", "content": transcript},
         ],
         response_format={"type": "json_object"},
@@ -554,9 +604,14 @@ def extract_session(transcript: str) -> dict[str, Any]:
     (~2.6B total pipeline with Whisper). Falls back to Qwen-7B only if the
     Modal endpoint is unavailable.
     """
-    payload = _extract_via_modal(transcript)
+    genre = detect_genre(_first_instruction(transcript), transcript)
+    frame = frame_for(genre)
+    payload = _extract_via_modal(transcript, genre=genre, frame=frame)
 
     if payload is None:
-        payload = _extract_via_fallback(transcript)
+        payload = _extract_via_fallback(transcript, genre=genre, frame=frame)
 
-    return _finalize(payload)
+    payload = _finalize(payload)
+    payload["genre"] = genre
+    payload["shell_legend"] = shell_legend(genre)
+    return payload

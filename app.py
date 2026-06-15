@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64 as b64lib
+import html
 import json
 import os
 import tempfile
@@ -122,6 +123,27 @@ def _format_slug_recap(extraction: dict[str, Any]) -> str:
     )
 
 
+def _format_shell_legend(extraction: dict[str, Any]) -> str:
+    """Return a compact genre-aware legend for the shell display."""
+    genre = str(extraction.get("genre") or "session")
+    legend = extraction.get("shell_legend") or {}
+    if not isinstance(legend, dict) or not legend:
+        return ""
+
+    knot = html.escape(str(legend.get("knot", "dead ends")))
+    jewel = html.escape(str(legend.get("jewel", "gotchas")))
+    aperture = html.escape(str(legend.get("aperture", "breakthrough")))
+    genre_label = html.escape(genre.replace("_", " "))
+    return (
+        '<div style="font: 13px system-ui, sans-serif; color: #4d4637; '
+        'background: #fff8e8; border: 1px solid #eadfbd; border-radius: 8px; '
+        'padding: 10px 12px; margin: 8px 0 12px;">'
+        f'<strong>Shell legend ({genre_label})</strong>: knots = {knot}; '
+        f'jewels = {jewel}; aperture = {aperture}.'
+        "</div>"
+    )
+
+
 def on_audio_change(audio: str | None):
     """Fired the moment a file is selected/recorded/cleared.
 
@@ -166,6 +188,7 @@ def _finalize_outputs(transcript_display: str, extraction: dict, slug_audio_path
     except Exception:
         # Never let the animation break the result: fall back to the static shell.
         shell_display = wrap_in_iframe(shell_svg, height=660)
+    shell_display = _format_shell_legend(extraction) + shell_display
     receipt_svg = generate_receipt_svg(extraction)
 
     tmp_dir = Path(tempfile.mkdtemp(prefix="slug_"))
