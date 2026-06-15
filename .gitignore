@@ -34,3 +34,18 @@ htmlcov/
 .vscode/
 *.wav
 !sample_session.wav
+
+# Offline research scratch — never ship to the Space (keeps the submission clean)
+swe_chat_traces/
+distractor_runs/
+skill_eval_runs/
+run_swe_chat_phases_v2.py
+fetch_swe_chat_v2.py
+nebius_loader.py
+trace2skill_faithful.py
+promotion_engine.py
+gotcha_cluster.py
+session_store.py
+artifact_meta.py
+rule_phrasing.py
+swe_chat_loader.py
