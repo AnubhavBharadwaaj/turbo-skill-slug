@@ -1,8 +1,8 @@
 #!/bin/bash
-# After running this, re-upload sample_session.wav via browser on both HF Spaces
 git checkout --orphan hf-deploy
 git add -A
 git rm -r --cached --ignore-unmatch \
+  sample_session.wav \
   swe_chat_traces \
   distractor_runs \
   skill_eval_runs \
@@ -19,5 +19,11 @@ git rm -r --cached --ignore-unmatch \
 git commit -m "deploy"
 git push hf hf-deploy:main --force
 git push org hf-deploy:main --force
+hf upload legendarydragontamer/TurboSkillSlug sample_session.wav sample_session.wav \
+  --repo-type=space \
+  --commit-message="upload sample session audio"
+hf upload build-small-hackathon/TurboSkillSlug sample_session.wav sample_session.wav \
+  --repo-type=space \
+  --commit-message="upload sample session audio"
 git checkout main
 git branch -D hf-deploy
