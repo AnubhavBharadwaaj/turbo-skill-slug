@@ -66,6 +66,14 @@ _THREE_DOC = r"""<!DOCTYPE html><html><head><meta charset="utf-8"/>
 <div id="fallback" style="display:none">This lens needs WebGL, which your browser
 or device did not provide. Try a desktop browser to turn the shell in 3D.</div>
 <div id="hint">drag to orbit · scroll to zoom</div>
+<div id="ctl" style="position:fixed;right:12px;top:12px;display:flex;gap:8px;z-index:10">
+  <button id="resetBtn" style="font:11px ui-monospace,monospace;color:#cfe3ff;
+    background:rgba(20,28,40,.72);border:1px solid #2a3a52;border-radius:8px;
+    padding:6px 10px;cursor:pointer">reset view</button>
+  <button id="shotBtn" style="font:11px ui-monospace,monospace;color:#ffe9c2;
+    background:rgba(20,28,40,.72);border:1px solid #5a4a2a;border-radius:8px;
+    padding:6px 10px;cursor:pointer">save image</button>
+</div>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
@@ -80,7 +88,7 @@ function fail(){ document.getElementById("fallback").style.display="block";
 
 let renderer;
 try {
-  renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+  renderer = new THREE.WebGLRenderer({antialias:true, alpha:true, preserveDrawingBuffer:true});
 } catch(e){ fail(); throw e; }
 if(!renderer || !renderer.getContext()){ fail(); }
 
@@ -213,6 +221,33 @@ el.addEventListener("wheel", e=>{ dist*=(1+Math.sign(e.deltaY)*0.08);
 
 addEventListener("resize", ()=>{ camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+
+// ---- Tier 1: reset view ----
+// capture the framing defaults so reset restores the exact initial pose
+const DEF_rotY = rotY, DEF_rotX = rotX, DEF_dist = dist;
+const resetBtn = document.getElementById("resetBtn");
+if (resetBtn) resetBtn.addEventListener("click", ()=>{
+  rotY = DEF_rotY; rotX = DEF_rotX; dist = DEF_dist;
+});
+
+// ---- Tier 1: save image (screenshot) ----
+// WebGL clears its drawing buffer after render, so toDataURL() on a stale frame
+// is blank. We render ONE fresh frame immediately before reading the pixels, in
+// the same tick, which captures correctly without preserveDrawingBuffer.
+const shotBtn = document.getElementById("shotBtn");
+if (shotBtn) shotBtn.addEventListener("click", ()=>{
+  try {
+    renderer.render(scene, camera);              // fresh frame, same tick
+    const url = renderer.domElement.toDataURL("image/png");
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "turboskillslug-shell-" + (P.session || "session") + ".png";
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch (e) {
+    // never break the lens if capture fails (some browsers block tainted canvases)
+    console.warn("screenshot failed:", e);
+  }
+});
 
 function loop(){
   requestAnimationFrame(loop);
