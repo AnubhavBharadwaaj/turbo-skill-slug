@@ -186,3 +186,91 @@ TurboSkillSlug now works as a complete small demo:
 5. The user can download the shell SVG, draft `SKILL.md`, and slug recap.
 
 The result is intentionally small, strange, and specific. Codex built most of the machinery. The repeated tests and corrections taught it where the machinery needed to become more honest.
+
+## Continued Development (post-MVP)
+
+After the audio-to-shell MVP described above, Codex carried the project through five
+more rounds of work. Each was a discrete, committed change with verification before
+push. The commit hashes below are the Codex-attributed history in the repo.
+
+### The Slug Speaks: Chatterbox TTS (commit 0d1a73f)
+
+Codex wired voice into the app so the slug does not just write its witness lines, it
+speaks them. The work added a `_speak_recap` function that posts the recap text to a
+Chatterbox TTS endpoint running on Modal, decodes the returned base64 audio into a
+`slug_speaks.wav`, and surfaces it through a new Gradio audio component labeled "the
+slug speaks." The recap always closes on the slug's signature line, "I was here."
+
+Codex verified with `py_compile` and the app test suite before pushing, then ran the
+deploy script to force-update both Spaces.
+
+### Readiness Feedback and Voice Deduplication (commit 57e0748)
+
+A round of product-quality fixes Codex handled cleanly: the upload control now gives
+visible readiness feedback so a premature click is impossible, a redundant SlugVoice
+call was removed, and the "I was here" signature was deduplicated by avoiding direct
+mutation of the `slug_voice` list. Small changes, but they are the difference between
+an app that feels finished and one that feels like a prototype.
+
+### Skill-Uplift Eval Suite (commit a3c65db)
+
+This is where the project gained a research spine. Codex committed a suite of three
+blind, calibrated evaluations measuring exactly when a generated `SKILL.md` changes a
+frontier model's behavior. The scripts use one model to answer and an independent
+model to judge the primary recommendation, with leak guards and saved raw generations
+for re-scoring.
+
+The finding was sharp and a little humbling: uplift depends on knowledge provenance,
+not task difficulty. General algorithmic skills gave 0.0 uplift because the model
+already holds that knowledge in its weights. Well-known engineering traps also gave
+0.0. Only novel, non-public rules produced uplift (+1.0, with rescues and no
+regressions). A skill file helps a frontier model only when it carries knowledge that
+could not have been in training data: private behavior, post-cutoff facts, project
+conventions, or genuine discoveries.
+
+One honest correction is recorded in the commit itself: an early signature-based
+scorer miscounted trap *warnings* as trap *failures*, and was replaced with a model
+judge of the primary recommendation. The novel cases are fictional by necessity, so
+the knowledge they test cannot already be in any model's weights.
+
+### First SceneGraph Lens: Turn the Shell in 3D (commit 508da94)
+
+Codex wired the first of a planned set of alternate renderers. The same session that
+produces the flat SVG shell now also drives a real 3D object you can orbit: a Three.js
+nautilus with iridescent nacre, where the spiral growth, the knots (dead ends), the
+glowing aperture (breakthrough), and the colour arc all come from the session data.
+This sits behind a deterministic SceneGraph layer, so the semantic description of the
+scene is separate from how any one lens renders it.
+
+The wiring included the package structure for the `scenegraph/` modules and their
+renderer. A later fix corrected the Three.js source to load from jsdelivr after the
+original CDN was blocked by the iframe sandbox, which had kept the 3D scene from ever
+initializing.
+
+### Compliance Guard for the 32B Cap (commit 0b42267)
+
+The hackathon requires every model the app depends on to stay under 32B parameters.
+The app was already compliant, the live path uses a 1.5B extractor on Modal plus
+Whisper, with a labeled Qwen-7B fallback, but Codex added a guard so a future edit
+cannot silently break that. `app.py` marks itself as the live app at startup, and
+`extract.py` checks the model name before each inference call. Anything over the cap
+raises immediately instead of shipping a violation. Offline evaluation scripts never
+enable the runtime flag, so their use of larger models for research is unaffected.
+
+The honest boundary of this guard is recorded too: it checks model names passed on the
+app side and cannot see inside the Modal endpoint, so the durable compliance fact is
+that the deployed serving endpoint runs Qwen2.5-1.5B and Whisper, which is verifiable
+from the Modal serve code.
+
+## What the Later Rounds Taught
+
+The MVP showed Codex was strongest at concrete code movement. The later rounds showed
+something more specific: Codex was reliable at carrying a precisely-described change
+all the way through verification and deploy, compile-check, run the app tests, commit
+with a real message, push, and force-update the Spaces, without dropping a step.
+
+The judgment calls still belonged to the human side: deciding that a skill file's value
+comes from provenance rather than difficulty, noticing that an eval scorer was counting
+the wrong thing, choosing to add a compliance tripwire before it was ever needed. Codex
+turned those decisions into committed, tested code quickly and faithfully. That division
+held across every round: the human decides what honest looks like, and Codex builds it.
