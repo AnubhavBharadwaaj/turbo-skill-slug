@@ -28,5 +28,9 @@ hf upload build-small-hackathon/TurboSkillSlug sample_session.wav sample_session
   --repo-type=space \
   --token "$HF_DEPLOY_TOKEN" \
   --commit-message="upload sample session audio"
+if [ -f sample_session.wav ]; then
+  TMP_SAMPLE=$(mktemp "${TMPDIR:-/tmp}/sample_session.deploy.XXXXXX")
+  mv sample_session.wav "$TMP_SAMPLE"
+fi
 git checkout main
 git branch -D hf-deploy
