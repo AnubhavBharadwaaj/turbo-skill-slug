@@ -157,8 +157,9 @@ def _format_shell_legend(extraction: dict[str, Any]) -> str:
     aperture = html.escape(str(legend.get("aperture", "breakthrough")))
     genre_label = html.escape(genre.replace("_", " "))
     return (
-        '<div style="font: 13px system-ui, sans-serif; color: #4d4637; '
-        'background: #fff8e8; border: 1px solid #eadfbd; border-radius: 8px; '
+        '<div style="font: 13px system-ui, sans-serif; '
+        'color: #4d4637 !important; background: #fff8e8 !important; '
+        'border: 1px solid #c8a24c; border-radius: 8px; '
         'padding: 10px 12px; margin: 8px 0 12px;">'
         f'<strong>Shell legend ({genre_label})</strong>: knots = {knot}; '
         f'jewels = {jewel}; aperture = {aperture}.'
