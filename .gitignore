@@ -36,6 +36,8 @@ htmlcov/
 !sample_session.wav
 
 # Offline research scratch — never ship to the Space (keeps the submission clean)
+research/
+research/traces/
 swe_chat_traces/
 distractor_runs/
 skill_eval_runs/

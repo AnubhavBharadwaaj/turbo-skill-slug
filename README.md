@@ -299,7 +299,8 @@ quirks), but cross-session promotion only fires within a single codebase, becaus
 two different repos never share the same private trap. This was an exploratory
 check on a handful of sessions, not a systematic benchmark, and it surfaced a
 true property of the problem rather than a polished number, reported rather than
-hidden.
+hidden. The loader scripts live in `research/traces/` in the GitHub repo, so the
+check is reproducible from scratch.
 
 Full method, code, and tests live in the repo; the research is a foundation for
 where the slug goes next, not a claim about the current Space.
