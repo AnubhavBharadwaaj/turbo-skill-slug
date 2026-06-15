@@ -12,12 +12,12 @@ short_description: Turn a coding session into a skill, recap, and shell.
 tags:
   - hackathon
   - build-small-hackathon
-  - thousand-token-wood
-  - codex
-  - best-demo
-  - off-brand
-  - well-tuned
-  - tiny-titan
+  - track:wood
+  - sponsor:openai
+  - sponsor:modal
+  - achievement:welltuned
+  - achievement:offbrand
+  - achievement:fieldnotes
 models:
   - legendarydragontamer/slugvoice-qwen2.5-1.5b-lora
   - legendarydragontamer/slugextract-qwen2.5-1.5b-lora
@@ -249,10 +249,8 @@ cases.
 |---|---|---|
 | 🍄 Thousand Token Wood | ✅ | A slug grows a shell from your session |
 | 🏆 Best Use of Codex | ✅ | Codex-attributed commits, documented usage, public repo |
-| 🎬 Best Demo | ✅ | [Demo video](https://youtu.be/qSP9olWRv7o) + two one-click samples |
 | 🎨 Off Brand | ✅ | Procedural shell: scroll-unroll birth, byōbu battle layer, thermal receipt |
 | 🎯 Well-Tuned | ✅ | TWO published LoRAs + a published, re-scorable groundedness eval |
-| 🔬 Tiny Titan | ✅ | ~2.6B primary pipeline (Whisper 809M + 1.5B). 7B is fallback only. |
 | 🏗️ Best Use of Modal | ✅ | Two fine-tunes, dual-adapter serving, TTS, eval, and gallery on Modal |
 | 📓 Field Notes | ✅ | [Blog article](https://huggingface.co/blog/build-small-hackathon/turboskillslug-shell-from-session) |
 
@@ -294,11 +292,14 @@ researched is clear:
   analysis, hierarchical prevalent-pattern merging, niche items routed to
   references) for higher-fidelity extraction.
 
-An honest result from running the extractor on real public agent traces: its
-gotchas are specific and real (it named exact functions, ref namespaces, and
-build-tool quirks), but cross-session promotion only fires within a single
-codebase, because two different repos never share the same private trap. That is
-a true property of the problem, reported rather than hidden.
+An honest result from running the extractor on a sample of real public agent
+traces (SALT-NLP/SWE-chat and nebius/SWE-agent-trajectories): its gotchas are
+specific and real (it named exact functions, ref namespaces, and build-tool
+quirks), but cross-session promotion only fires within a single codebase, because
+two different repos never share the same private trap. This was an exploratory
+check on a handful of sessions, not a systematic benchmark, and it surfaced a
+true property of the problem rather than a polished number, reported rather than
+hidden.
 
 Full method, code, and tests live in the repo; the research is a foundation for
 where the slug goes next, not a claim about the current Space.
