@@ -237,7 +237,14 @@ def process_audio(audio: str | None):
         yield _empty_outputs("Give the slug an audio file first.")
         return
 
-    transcript = transcribe_audio(audio)
+    try:
+        transcript = transcribe_audio(audio)
+    except FileNotFoundError:
+        yield _empty_outputs(
+            "The slug couldn't find that audio file. Please re-upload it and try again."
+        )
+        return
+
     extraction = extract_session(transcript)
     slug_audio_path = _speak_recap(extraction.get("slug_voice", []))
 
