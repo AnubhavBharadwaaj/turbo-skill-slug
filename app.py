@@ -21,6 +21,7 @@ from shell_animate import wrap_in_iframe, animate_shell_svg
 from shell_unroll import build_unroll_doc, N_STAGES
 from gallery_client import save_shell, list_shells, get_shell
 from battle_trace import render_battle_trace
+from shell3d_lens import render_shell_3d
 from shell_animate import wrap_in_iframe as _wrap_iframe
 from transcribe import transcribe_audio
 from trace_parser import parse_trace_to_transcript, detect_trace_format
@@ -375,6 +376,33 @@ def build_interface() -> gr.Blocks:
                     fn=_show_battle,
                     inputs=[cur_extraction],
                     outputs=[battle_view],
+                )
+
+            # The shell as a real 3D object you can turn in the light. Same session
+            # data, a different lens: the SceneGraph drives a Three.js nautilus with
+            # iridescent nacre. First of the planned multi-lens renderers.
+            with gr.Accordion("🔮 turn the shell in 3D (experimental lens)", open=False):
+                gr.Markdown(
+                    "The same shell, rendered as a real object you can orbit. The "
+                    "spiral's growth, the knots (dead ends), the glowing aperture "
+                    "(breakthrough), and the colour arc all come from your session, "
+                    "now with true iridescent nacre. Drag to turn it; scroll to zoom."
+                )
+                shell3d_view = gr.HTML()
+                shell3d_button = gr.Button("🔮 see this shell in 3D")
+
+                def _show_shell3d(extraction):
+                    if not extraction:
+                        return gr.update(value="*No shell to render in 3D yet.*")
+                    html = render_shell_3d(extraction)
+                    if not html:
+                        return gr.update(value="*The 3D lens is unavailable right now.*")
+                    return gr.update(value=html)
+
+                shell3d_button.click(
+                    fn=_show_shell3d,
+                    inputs=[cur_extraction],
+                    outputs=[shell3d_view],
                 )
 
         # Enable the button only once audio is actually present
