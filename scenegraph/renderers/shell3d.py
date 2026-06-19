@@ -66,7 +66,15 @@ _THREE_DOC = r"""<!DOCTYPE html><html><head><meta charset="utf-8"/>
 </style></head><body>
 <div id="fallback" style="display:none">This lens needs WebGL, which your browser
 or device did not provide. Try a desktop browser to turn the shell in 3D.</div>
-<div id="hint">drag to orbit · scroll to zoom</div>
+<div id="hint">drag to orbit · scroll to zoom · click a knot or jewel</div>
+<div id="info" style="position:fixed;left:12px;top:12px;max-width:62%;
+  display:none;background:rgba(10,14,20,.86);color:#e8eefc;border-radius:10px;
+  border:1px solid #2a3a52;padding:10px 12px;font:12px/1.45 ui-monospace,monospace;
+  z-index:11;pointer-events:none">
+  <div id="infoKind" style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+    opacity:.65;margin-bottom:4px"></div>
+  <div id="infoText"></div>
+</div>
 <div id="ctl" style="position:fixed;right:12px;top:12px;display:flex;gap:8px;z-index:10">
   <button id="resetBtn" style="font:11px ui-monospace,monospace;color:#cfe3ff;
     background:rgba(20,28,40,.72);border:1px solid #2a3a52;border-radius:8px;
@@ -186,10 +194,13 @@ scene.add(shell);
 
 // ---- knots: raised nubs at each dead-end position along the arm ----
 const knotMat = new THREE.MeshPhysicalMaterial({color:0x2a1d12, roughness:0.3, clearcoat:1.0, iridescence:0.8, iridescenceIOR:1.4});
+const pickable = [];   // meshes the raycaster can hit
 for(const k of (P.knots||[])){
   const cp = curve.getPoint(Math.min(1, k.t));
   const s = new THREE.Mesh(new THREE.SphereGeometry(0.10+0.06*(k.severity||0.5),20,20), knotMat);
   s.position.copy(cp); shell.add(s);
+  s.userData = {kind:"dead end", label:(k.label||"a dead end")};
+  pickable.push(s);
 }
 
 // ---- jewels: iridescent beads on the rim at each gotcha position ----
@@ -207,11 +218,18 @@ for(const j of (P.jewels||[])){
   const radial = new THREE.Vector3(cp.x, cp.y, 0);
   if(radial.lengthSq() < 1e-6) radial.set(1,0,0); else radial.normalize();
   const bead = new THREE.Mesh(new THREE.SphereGeometry(0.085,18,18), jewelMat);
-  // local tube radius grows along the arm; push the bead just past the surface
   const localGrow = 0.12 + 2.4*j.t*j.t;
   const off = tubeR*localGrow + 0.05;
   bead.position.copy(cp).addScaledVector(radial, off);
   shell.add(bead);
+  bead.userData = {kind:"gotcha", label:(j.label||"a gotcha")};
+  pickable.push(bead);
+}
+
+// if nothing is annotated, drop the "click a knot or jewel" hint
+if(pickable.length === 0){
+  const h = document.getElementById("hint");
+  if(h) h.textContent = "drag to orbit · scroll to zoom";
 }
 
 // ---- aperture: a glowing sphere at the breakthrough position ----
@@ -293,6 +311,41 @@ if (shotBtn) shotBtn.addEventListener("click", ()=>{
   } catch (e) {
     // never break the lens if capture fails (some browsers block tainted canvases)
     console.warn("screenshot failed:", e);
+  }
+});
+
+// ---- Tier 3: click a knot/jewel to read its text ----
+const raycaster = new THREE.Raycaster();
+raycaster.params.Points = raycaster.params.Points || {};
+// Mesh raycasting is exact, but enlarge the effective hit by testing a tiny
+// neighborhood is overkill; instead we rely on the spheres' real radius. Keeping
+// this hook here documents that near-miss tuning lives on the sphere size.
+const ndc = new THREE.Vector2();
+const infoBox = document.getElementById("info");
+const infoKind = document.getElementById("infoKind");
+const infoText = document.getElementById("infoText");
+let pickMoved = false;   // distinguish a click from a drag
+
+el.addEventListener("pointerdown", ()=>{ pickMoved = false;
+  if(infoBox) infoBox.style.display = "none"; });
+addEventListener("pointermove", ()=>{ if(drag) pickMoved = true; });
+
+el.addEventListener("click", (e)=>{
+  if(pickMoved) return;                    // it was an orbit drag, not a pick
+  const rect = el.getBoundingClientRect();
+  ndc.x = ((e.clientX-rect.left)/rect.width)*2 - 1;
+  ndc.y = -((e.clientY-rect.top)/rect.height)*2 + 1;
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(pickable, false);
+  if(hits.length){
+    const ud = hits[0].object.userData || {};
+    if(infoBox && infoKind && infoText){
+      infoKind.textContent = ud.kind || "";
+      infoText.textContent = ud.label || "(no detail recorded)";
+      infoBox.style.display = "block";
+    }
+  } else if(infoBox){
+    infoBox.style.display = "none";
   }
 });
 

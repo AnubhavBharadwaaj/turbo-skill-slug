@@ -19,6 +19,28 @@ from scene_graph import (
 )
 
 
+def _clean_label(val, fallback: str) -> str:
+    """Coerce an extractor field to a clean, displayable one-line label."""
+    if val is None:
+        return fallback
+    if isinstance(val, (dict, list)):
+        if isinstance(val, dict):
+            for key in ("what_happened", "text", "detail", "description", "value"):
+                v = val.get(key)
+                if isinstance(v, str) and v.strip():
+                    val = v
+                    break
+            else:
+                return fallback
+        else:
+            val = " ".join(str(x) for x in val) if val else fallback
+    s = str(val).strip()
+    if not s:
+        return fallback
+    s = " ".join(s.split())
+    return s[:140]
+
+
 def _session_id(extraction: dict) -> str:
     blob = json.dumps(extraction, sort_keys=True, default=str).encode()
     return hashlib.sha256(blob).hexdigest()[:16]
@@ -61,9 +83,12 @@ def _build_shell(duration, approaches, dead_ends, gotchas, breakthroughs,
     n = len(approaches) + len(dead_ends)
     growth_curve = "gentle" if n <= 2 else ("steady" if n <= 5 else "steep")
     knots = [{"t": _clamp01(float(d.get("position", 0.5))),
-              "severity": 0.5} for d in dead_ends if isinstance(d, dict)]
-    jewels = [{"t": _clamp01((i + 1) / (len(gotchas) + 1))}
-              for i in range(len(gotchas))]
+              "severity": 0.5,
+              "label": _clean_label(d.get("what_happened"), "a dead end")}
+             for d in dead_ends if isinstance(d, dict)]
+    jewels = [{"t": _clamp01((i + 1) / (len(gotchas) + 1)),
+               "label": _clean_label(g, "a gotcha")}
+              for i, g in enumerate(gotchas)]
     if breakthroughs:
         b = breakthroughs[-1]
         ap_t = _clamp01(float(b.get("position", 0.9))) if isinstance(b, dict) else 0.9
